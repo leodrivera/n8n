@@ -38,6 +38,7 @@ import { Config, Env, Nested } from './decorators';
 
 export { Config, Env, Nested } from './decorators';
 export { DatabaseConfig, SqliteConfig } from './configs/database.config';
+export { CredentialsConfig } from './configs/credentials.config';
 export { InstanceSettingsConfig } from './configs/instance-settings-config';
 export type { TaskRunnerMode } from './configs/runners.config';
 export { TaskRunnersConfig } from './configs/runners.config';
