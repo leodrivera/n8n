@@ -7,6 +7,7 @@ import { useToast } from '@/composables/useToast';
 import { useClipboard } from '@/composables/useClipboard';
 import { useDebugInfo } from '@/composables/useDebugInfo';
 import { useI18n } from '@n8n/i18n';
+import { N8N_MAIN_GITHUB_REPO_URL } from '@/constants';
 
 const modalBus = createEventBus();
 const toast = useToast();
@@ -53,7 +54,7 @@ const copyDebugInfoToClipboard = async () => {
 						<n8n-text>{{ i18n.baseText('about.sourceCode') }}</n8n-text>
 					</el-col>
 					<el-col :span="16">
-						<n8n-link to="https://github.com/n8n-io/n8n">https://github.com/n8n-io/n8n</n8n-link>
+						<n8n-link :to="N8N_MAIN_GITHUB_REPO_URL">{{ N8N_MAIN_GITHUB_REPO_URL }}</n8n-link>
 					</el-col>
 				</el-row>
 				<el-row>
