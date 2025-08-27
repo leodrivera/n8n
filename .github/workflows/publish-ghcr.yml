@@ -1,0 +1,138 @@
+name: Build & Publish n8n (GHCR)
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "n8n@*"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to publish (e.g. 1.107.4-iam)"
+        required: false
+        type: string
+      push_enabled:
+        description: "Publish to GHCR on manual runs?"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  HUSKY: '0'
+  CI: '1'
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: '1'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install pnpm matching the "packageManager" field in package.json.
+      # Do NOT specify "version" here to avoid conflicts.
+      - name: Setup pnpm (from packageManager)
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      # Install Node 22 and enable caching for pnpm
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # 1) Build the monorepo first (this creates ./compiled used by the official Dockerfile)
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build n8n
+        run: pnpm build:n8n
+
+      # 2) Compute image tags AND a clean version (without n8n@) for N8N_VERSION
+      - name: Compute image tags & version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          BASE="ghcr.io/${OWNER}/${REPO}"
+          REF="${{ github.ref }}"
+          EVENT="${{ github.event_name }}"
+          INPUT_TAG="${{ github.event.inputs.image_tag }}"
+          SHA="${{ github.sha }}"
+
+          TAGS=""
+          CLEAN_VERSION=""
+
+          if [[ "${EVENT}" == "workflow_dispatch" && -n "${INPUT_TAG}" ]]; then
+            # Manual run: use the provided tag verbatim for both image tag and N8N_VERSION
+            TAGS="${BASE}:${INPUT_TAG}"
+            CLEAN_VERSION="${INPUT_TAG}"
+          elif [[ "${REF}" == refs/tags/* ]]; then
+            RAW="${REF#refs/tags/}"
+            if [[ "${RAW}" == n8n@* ]]; then
+              VERSION="${RAW#n8n@}"   # e.g. 1.107.4-iam
+              TAGS="${BASE}:${VERSION}"
+              CLEAN_VERSION="${VERSION}"
+            else
+              TAGS="${BASE}:${RAW}"
+              CLEAN_VERSION="${RAW}"
+            fi
+          elif [[ "${REF}" == refs/heads/* ]]; then
+            BRANCH="${REF#refs/heads/}"
+            SAFE_BRANCH=$(echo "$BRANCH" | tr '/' '-' | tr -cd '[:alnum:]-_')
+            TAGS="${BASE}:branch-${SAFE_BRANCH},${BASE}:sha-${SHA}"
+            CLEAN_VERSION="${BRANCH}"  # pass branch name through to N8N_VERSION for non-tag builds
+          else
+            TAGS="${BASE}:sha-${SHA}"
+            CLEAN_VERSION="${SHA}"
+          fi
+
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "clean_version=${CLEAN_VERSION}" >> "$GITHUB_OUTPUT"
+
+      # 3) Enable multi-arch builds without custom runners
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 4) Build & push using the official Dockerfile from the repo
+      - name: Build & Push (GHCR)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/images/n8n/Dockerfile
+          push: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.push_enabled == 'true' }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            NODE_VERSION=22
+            N8N_VERSION=${{ steps.meta.outputs.clean_version }}
+            N8N_RELEASE_TYPE=stable
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
+            IMAGE_TITLE=${{ github.event.repository.name }}
+            IMAGE_REVISION=${{ github.sha }}
+            MAIN_GITHUB_REPO_URL=${{ github.server_url }}/${{ github.repository }}
+          tags: ${{ steps.meta.outputs.tags }}

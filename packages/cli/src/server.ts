@@ -293,9 +293,11 @@ export class Server extends AbstractServer {
 					serverName: process.env.DEPLOYMENT_NAME,
 					release: `n8n@${N8N_VERSION}`,
 				});
+				const repoUrl = process.env.N8N_MAIN_GITHUB_REPO_URL || 'https://github.com/n8n-io/n8n';
 				const frontendConfig = [
 					`window.REST_ENDPOINT = '${this.globalConfig.endpoints.rest}';`,
 					`window.sentry = ${frontendSentryConfig};`,
+					`window.N8N_MAIN_GITHUB_REPO_URL = '${repoUrl}';`,
 				].join('\n');
 
 				res.type('application/javascript');
