@@ -1,0 +1,135 @@
+name: Auto-rebase IAM branch on new n8n releases
+
+on:
+  # Trigger when a new release is published to n8n-io/n8n
+  repository_dispatch:
+    types: [n8n-release]
+  
+  # Also trigger on workflow_dispatch for manual testing
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'n8n release tag to rebase onto (e.g., n8n@1.109.2)'
+        required: true
+        type: string
+      patch_branch:
+        description: 'Patch branch name to rebase'
+        required: false
+        default: 'iam'
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  UPSTREAM_REPO: "n8n-io/n8n"
+  UPSTREAM_URL: "https://github.com/n8n-io/n8n.git"
+  PATCH_BRANCH: "iam"
+  RELEASE_TAG_SUFFIX: "iam"
+
+jobs:
+  auto-rebase:
+    name: Auto-rebase IAM branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up upstream remote
+        run: |
+          # Remove existing upstream if it exists
+          git remote remove upstream 2>/dev/null || true
+          # Add upstream remote
+          git remote add upstream ${{ env.UPSTREAM_URL }}
+          # Fetch all tags from upstream
+          git fetch upstream --tags
+
+      - name: Determine release tag
+        id: release-tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.release_tag }}" >> $GITHUB_OUTPUT
+            echo "branch=${{ github.event.inputs.patch_branch }}" >> $GITHUB_OUTPUT
+          else
+            # Extract tag from repository_dispatch payload
+            TAG=$(echo '${{ github.event.client_payload.release_tag }}' | tr -d '"')
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+            echo "branch=${{ env.PATCH_BRANCH }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify patch branch exists
+        run: |
+          if ! git show-ref --verify --quiet refs/heads/${{ steps.release-tag.outputs.branch }}; then
+            echo "ERROR: Branch '${{ steps.release-tag.outputs.branch }}' does not exist"
+            exit 1
+          fi
+
+      - name: Verify release tag exists
+        run: |
+          if ! git show-ref --verify --quiet refs/tags/${{ steps.release-tag.outputs.tag }}; then
+            echo "ERROR: Release tag '${{ steps.release-tag.outputs.tag }}' does not exist"
+            exit 1
+          fi
+
+      - name: Infer previous base tag
+        id: previous-tag
+        run: |
+          # Use git describe to find the previous upstream tag (excluding *-iam tags)
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 --exclude '*-iam' ${{ steps.release-tag.outputs.branch }} 2>/dev/null || echo "")
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "ERROR: Could not infer previous base tag for branch ${{ steps.release-tag.outputs.branch }}"
+            echo "Hint: The branch might not be based on an upstream tag, or you may need to specify --from-tag explicitly"
+            exit 1
+          fi
+          echo "tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+          echo "Previous base tag: $PREVIOUS_TAG"
+
+      - name: Checkout patch branch
+        run: |
+          git checkout ${{ steps.release-tag.outputs.branch }}
+
+      - name: Perform rebase
+        run: |
+          echo "Rebasing ${{ steps.release-tag.outputs.branch }}: ${{ steps.previous-tag.outputs.tag }} -> ${{ steps.release-tag.outputs.tag }}"
+          git rebase --rebase-merges --onto refs/tags/${{ steps.release-tag.outputs.tag }} refs/tags/${{ steps.previous-tag.outputs.tag }} ${{ steps.release-tag.outputs.branch }}
+          
+          # Get the new HEAD commit
+          HEAD_SHA=$(git rev-parse --short HEAD)
+          echo "Rebase completed. HEAD at $HEAD_SHA on top of ${{ steps.release-tag.outputs.tag }}"
+
+      - name: Create/update release tag
+        run: |
+          CUSTOM_TAG="${{ steps.release-tag.outputs.tag }}-${{ env.RELEASE_TAG_SUFFIX }}"
+          echo "Creating/updating tag: $CUSTOM_TAG"
+          
+          # Force-move the tag if it already exists
+          git tag -fa "$CUSTOM_TAG" -m "Release $CUSTOM_TAG" || git tag -a "$CUSTOM_TAG" -m "Release $CUSTOM_TAG"
+          
+          echo "tag=$CUSTOM_TAG" >> $GITHUB_ENV
+
+      - name: Push branch and tag
+        run: |
+          echo "Pushing branch ${{ steps.release-tag.outputs.branch }} and tag ${{ env.tag }}"
+          git push -f origin ${{ steps.release-tag.outputs.branch }}
+          git push -f origin ${{ env.tag }}
+
+      - name: Summary
+        run: |
+          echo "✅ Successfully rebased ${{ steps.release-tag.outputs.branch }} onto ${{ steps.release-tag.outputs.tag }}"
+          echo "✅ Created/updated tag: ${{ env.tag }}"
+          echo "✅ Pushed branch and tag to origin"
+          echo ""
+          echo "Previous base tag: ${{ steps.previous-tag.outputs.tag }}"
+          echo "New base tag: ${{ steps.release-tag.outputs.tag }}"
+          echo "Custom tag: ${{ env.tag }}"

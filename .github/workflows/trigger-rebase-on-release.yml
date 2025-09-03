@@ -1,0 +1,96 @@
+name: Trigger rebase on n8n release
+
+on:
+  # Run on a schedule to check for new releases
+  schedule:
+    - cron: '0 0 * * *'  # Check once daily at midnight UTC
+  
+  # Also allow manual triggering
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Specific release tag to trigger rebase for (optional)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  UPSTREAM_REPO: "n8n-io/n8n"
+
+jobs:
+  check-for-new-release:
+    name: Check for new n8n release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Get latest release from upstream
+        id: latest-release
+        run: |
+          if [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            # Use manually specified tag
+            LATEST_TAG="${{ github.event.inputs.release_tag }}"
+            echo "Using manually specified tag: $LATEST_TAG"
+          else
+            # Fetch latest release from GitHub API
+            echo "Fetching latest release from ${{ env.UPSTREAM_REPO }}..."
+            LATEST_TAG=$(curl -s "https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest" | jq -r '.tag_name')
+            if [ "$LATEST_TAG" = "null" ] || [ -z "$LATEST_TAG" ]; then
+              echo "ERROR: Could not fetch latest release tag"
+              exit 1
+            fi
+            echo "Latest release tag: $LATEST_TAG"
+          fi
+          
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+      - name: Check if we already processed this release
+        id: check-processed
+        run: |
+          TAG="${{ steps.latest-release.outputs.tag }}"
+          CUSTOM_TAG="${TAG}-iam"
+          
+          # Check if the custom tag already exists in our repository
+          if git ls-remote --tags origin | grep -q "refs/tags/${CUSTOM_TAG}$"; then
+            echo "Release $TAG already processed (tag $CUSTOM_TAG exists)"
+            echo "processed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release $TAG not yet processed"
+            echo "processed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger auto-rebase workflow
+        if: steps.check-processed.outputs.processed == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const releaseTag = '${{ steps.latest-release.outputs.tag }}';
+            
+            console.log(`Triggering auto-rebase workflow for release: ${releaseTag}`);
+            
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'auto-rebase-iam.yml',
+              ref: 'master', // or whatever branch contains the workflow
+              inputs: {
+                release_tag: releaseTag,
+                patch_branch: 'iam'
+              }
+            });
+            
+            console.log('Auto-rebase workflow triggered successfully');
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.check-processed.outputs.processed }}" = "true" ]; then
+            echo "✅ Release ${{ steps.latest-release.outputs.tag }} already processed"
+          else
+            echo "🚀 Triggered auto-rebase workflow for release: ${{ steps.latest-release.outputs.tag }}"
+          fi
