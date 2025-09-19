@@ -118,21 +118,25 @@ jobs:
           git push -f origin ${{ steps.params.outputs.branch }}
           git push -f origin ${{ env.custom_tag }}
 
-      - name: Notify GHCR publish workflow
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Wait briefly to ensure the tag is visible to the API
-          sleep 5
-          REPO="${{ github.repository }}"
-          EVENT_TYPE="n8n-iam-tag-created"
-          PAYLOAD=$(jq -n --arg image_tag "${{ env.custom_tag }}" '{image_tag: $image_tag}')
-          curl -sS -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/${REPO}/dispatches \
-            -d "{\"event_type\": \"${EVENT_TYPE}\", \"client_payload\": ${PAYLOAD}}"
+      - name: Trigger GHCR publish workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Wait briefly to ensure the tag is visible to the API
+            await new Promise((r) => setTimeout(r, 10_000));
+            const imageTag = process.env.CUSTOM_TAG || process.env.custom_tag || '${{ env.custom_tag }}';
+            if (!imageTag) {
+              core.setFailed('custom_tag env var not found');
+              return;
+            }
+            console.log(`Dispatching publish workflow with image_tag: ${imageTag}`);
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'publish-ghcr.yml',
+              ref: 'workflows',
+              inputs: { image_tag: imageTag }
+            });
 
 
       - name: Summary

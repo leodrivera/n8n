@@ -78,7 +78,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'auto-rebase-iam.yml',
-              ref: 'iam', // or whatever branch contains the workflow
+              ref: 'workflows',
               inputs: {
                 release_tag: releaseTag,
                 patch_branch: 'iam'
