@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { createEventBus } from '@n8n/utils/event-bus';
 import Modal from './Modal.vue';
-import { ABOUT_MODAL_KEY } from '../constants';
+import { ABOUT_MODAL_KEY, N8N_MAIN_GITHUB_REPO_URL } from '../constants';
 import { useRootStore } from '@n8n/stores/useRootStore';
 import { useToast } from '@/composables/useToast';
 import { useClipboard } from '@/composables/useClipboard';
@@ -71,7 +71,7 @@ const copyDebugInfoToClipboard = async () => {
 						<n8n-text>{{ i18n.baseText('about.sourceCode') }}</n8n-text>
 					</el-col>
 					<el-col :span="16">
-						<n8n-link to="https://github.com/n8n-io/n8n">https://github.com/n8n-io/n8n</n8n-link>
+						<n8n-link :to="N8N_MAIN_GITHUB_REPO_URL">{{ N8N_MAIN_GITHUB_REPO_URL }}</n8n-link>
 					</el-col>
 				</el-row>
 				<el-row>
