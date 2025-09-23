@@ -56,8 +56,8 @@ jobs:
 
       - name: Configure Git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "Leonardo Rivera"
+          git config user.email "leodrivera@gmail.com"
           # Configure GPG signing for the bot
           git config user.signingkey ${{ secrets.GPG_SIGNING_KEY }}
           git config commit.gpgsign true
@@ -87,7 +87,7 @@ jobs:
           echo "strategy=${STRATEGY}" >> $GITHUB_OUTPUT
 
           VERSION="${RAW_TAG#*@}"
-          echo "release_branch=release/${VERSION}" >> $GITHUB_OUTPUT
+          echo "release_branch=release/${VERSION}-iam" >> $GITHUB_OUTPUT
           echo "custom_tag=${RAW_TAG}-iam" >> $GITHUB_OUTPUT
 
       - name: Run release update script

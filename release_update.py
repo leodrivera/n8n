@@ -4,7 +4,7 @@
 Create a release branch from an upstream n8n tag and cherry-pick custom commits.
 
 New strategy (history-preserving):
-  - Create a new branch 'release/<version>' based on upstream tag (e.g., 'n8n@1.108.3' → version '1.108.3').
+  - Create a new branch 'release/<version>-iam' based on upstream tag (e.g., 'n8n@1.108.3' → version '1.108.3').
   - Cherry-pick a curated list of commits containing our customizations.
   - Create a custom '<to-tag>-iam' tag on current HEAD (used by GHCR workflow).
   - Do NOT include this script in the release branch.
@@ -38,8 +38,8 @@ RELEASE_TAG_SUFFIX = "iam"
 # Commits to cherry-pick on top of the upstream release tag.
 # Adjust this list as needed to include your customization commits.
 CHERRY_PICK_COMMITS: list[str] = [
-    "da2501e21b",
-    "5dafac5d39",
+    "39d39d2880",
+    "92ffba5efb",
 ]
 
 # ------------------------- Utilities -------------------------
@@ -153,9 +153,9 @@ def create_or_update_release_tag(new_tag: str, suffix: str = RELEASE_TAG_SUFFIX)
     return t
 
 def create_or_reset_release_branch(new_tag: str) -> str:
-    """Create or reset 'release/<version>' branch to point at the given upstream tag."""
+    """Create or reset 'release/<version>-iam' branch to point at the given upstream tag."""
     version = extract_version_from_tag(new_tag)
-    branch_name = f"{RELEASE_BRANCH_PREFIX}{version}"
+    branch_name = f"{RELEASE_BRANCH_PREFIX}{version}-{RELEASE_TAG_SUFFIX}"
     print(f"[branch] Creating/resetting branch: {branch_name} at {new_tag}")
     # Create or reset the branch to the tag (force-move if it already exists)
     run(f"git checkout -B {branch_name} refs/tags/{new_tag}", capture=False)
@@ -174,12 +174,29 @@ def cherry_pick_commits(commits: list[str], strategy: str = "theirs"):
         sha = sha.strip()
         if not sha:
             continue
+        sign_flag = "-S" if use_gpg else ""
         if strategy == "manual":
-            cmd = f"git cherry-pick -x {sha}"
+            cmd = f"git cherry-pick {sign_flag} -x {sha}".strip()
         else:
-            cmd = f"git cherry-pick -x -X {strategy} {sha}"
+            cmd = f"git cherry-pick {sign_flag} -x -X {strategy} {sha}".strip()
         print(f"[cherry-pick] {sha}")
         run(cmd, capture=False)
+
+def remove_workflows_dir_from_release_branch():
+    """Remove .github/workflows from the current branch and commit the deletion if present."""
+    workflows_path = os.path.join(".github", "workflows")
+    if not os.path.isdir(workflows_path):
+        print("[workflows] No .github/workflows directory present - skipping removal")
+        return
+    # Check if any files in the directory are tracked
+    tracked = run("git ls-files .github/workflows", capture=True, check=False).strip()
+    if not tracked:
+        print("[workflows] No tracked workflow files - skipping removal")
+        return
+    print("[workflows] Removing .github/workflows from release branch")
+    run("git rm -r .github/workflows", capture=False)
+    # Commit the deletion (GPG signing is used if configured via git config)
+    run("git commit -m 'chore(release): remove .github/workflows in release branch'", capture=False)
 
 # --------------------------- CLI ----------------------------
 
@@ -209,6 +226,8 @@ def main():
     # Create/reset branch and cherry-pick commits
     branch_name = create_or_reset_release_branch(new_tag)
     try:
+        # Remove workflows from the release branch to avoid permissions issues when pushing
+        remove_workflows_dir_from_release_branch()
         cherry_pick_commits(CHERRY_PICK_COMMITS, args.strategy)
         head = run("git rev-parse --short HEAD").strip()
         print(f"[ok] {branch_name} at {head} on top of {new_tag}")
