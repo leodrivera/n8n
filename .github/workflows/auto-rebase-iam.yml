@@ -1,4 +1,4 @@
-name: Auto-rebase IAM branch on new n8n releases
+name: Create release branch from n8n upstream tag
 
 on:
   # Trigger when a new release is published to n8n-io/n8n
@@ -34,20 +34,19 @@ permissions:
 env:
   UPSTREAM_REPO: "n8n-io/n8n"
   UPSTREAM_URL: "https://github.com/n8n-io/n8n.git"
-  PATCH_BRANCH: "iam"
-  RELEASE_TAG_SUFFIX: "iam"
 
 jobs:
   auto-rebase:
-    name: Auto-rebase IAM branch
+    name: Create release/<version> branch
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - name: Checkout repository (workflows branch)
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: workflows
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Import GPG key
@@ -77,24 +76,24 @@ jobs:
         id: params
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.release_tag }}" >> $GITHUB_OUTPUT
-            echo "branch=${{ github.event.inputs.patch_branch }}" >> $GITHUB_OUTPUT
-            echo "strategy=${{ github.event.inputs.strategy }}" >> $GITHUB_OUTPUT
+            RAW_TAG="${{ github.event.inputs.release_tag }}"
+            STRATEGY="${{ github.event.inputs.strategy }}"
           else
-            # Extract tag from repository_dispatch payload
-            TAG=$(echo '${{ github.event.client_payload.release_tag }}' | tr -d '"')
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "branch=${{ env.PATCH_BRANCH }}" >> $GITHUB_OUTPUT
-            echo "strategy=theirs" >> $GITHUB_OUTPUT
+            RAW_TAG=$(echo '${{ github.event.client_payload.release_tag }}' | tr -d '"')
+            STRATEGY="theirs"
           fi
+
+          echo "tag=${RAW_TAG}" >> $GITHUB_OUTPUT
+          echo "strategy=${STRATEGY}" >> $GITHUB_OUTPUT
+
+          VERSION="${RAW_TAG#*@}"
+          echo "release_branch=release/${VERSION}" >> $GITHUB_OUTPUT
+          echo "custom_tag=${RAW_TAG}-iam" >> $GITHUB_OUTPUT
 
       - name: Run release update script
         run: |
           # Build the command based on parameters
           CMD="python3 release_update.py"
-          
-          # Add patch branch
-          CMD="$CMD --patch-branch ${{ steps.params.outputs.branch }}"
           
           # Add target tag
           CMD="$CMD --to-tag ${{ steps.params.outputs.tag }}"
@@ -108,15 +107,15 @@ jobs:
           # Execute the command
           eval $CMD
           
-          # Get the custom tag for summary
-          CUSTOM_TAG="${{ steps.params.outputs.tag }}-${{ env.RELEASE_TAG_SUFFIX }}"
-          echo "custom_tag=$CUSTOM_TAG" >> $GITHUB_ENV
+          # Export release branch for later steps
+          echo "release_branch=${{ steps.params.outputs.release_branch }}" >> $GITHUB_ENV
+          echo "custom_tag=${{ steps.params.outputs.custom_tag }}" >> $GITHUB_ENV
 
-      - name: Push changes
+      - name: Push release branch and tag
         run: |
-          echo "Pushing branch ${{ steps.params.outputs.branch }} and tag ${{ env.custom_tag }}"
-          git push -f origin ${{ steps.params.outputs.branch }}
-          git push -f origin ${{ env.custom_tag }}
+          echo "Pushing branch ${{ env.release_branch }} and tag ${{ env.custom_tag }}"
+          git push -u origin ${{ env.release_branch }}
+          git push origin ${{ env.custom_tag }}
 
       - name: Trigger GHCR publish workflow
         uses: actions/github-script@v7
@@ -124,27 +123,27 @@ jobs:
           script: |
             // Wait briefly to ensure the tag is visible to the API
             await new Promise((r) => setTimeout(r, 10_000));
-            const imageTag = process.env.CUSTOM_TAG || process.env.custom_tag || '${{ env.custom_tag }}';
+            const imageTag = process.env.custom_tag || '${{ env.custom_tag }}';
             if (!imageTag) {
               core.setFailed('custom_tag env var not found');
               return;
             }
-            console.log(`Dispatching publish workflow with image_tag: ${imageTag}`);
-            await github.rest.actions.createWorkflowDispatch({
+            console.log(`Dispatching repository_dispatch with image_tag: ${imageTag}`);
+            await github.rest.repos.createDispatchEvent({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: 'publish-ghcr.yml',
-              ref: 'workflows',
-              inputs: { image_tag: imageTag }
+              event_type: 'n8n-iam-tag-created',
+              client_payload: { image_tag: imageTag }
             });
 
 
       - name: Summary
         run: |
-          echo "✅ Successfully rebased ${{ steps.params.outputs.branch }} onto ${{ steps.params.outputs.tag }}"
-          echo "✅ Created/updated tag: ${{ env.custom_tag }}"
+          echo "✅ Created branch ${{ env.release_branch }} from ${{ steps.params.outputs.tag }}"
+          echo "✅ Created tag: ${{ env.custom_tag }}"
           echo "✅ Pushed branch and tag to origin"
           echo ""
           echo "Strategy used: ${{ steps.params.outputs.strategy }}"
           echo "New base tag: ${{ steps.params.outputs.tag }}"
+          echo "Release branch: ${{ env.release_branch }}"
           echo "Custom tag: ${{ env.custom_tag }}"

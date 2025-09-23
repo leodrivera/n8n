@@ -1,6 +1,9 @@
 name: Build & Publish n8n (GHCR)
 
 on:
+  repository_dispatch:
+    types:
+      - n8n-iam-tag-created
   workflow_dispatch:
     inputs:
       image_tag:
@@ -92,6 +95,15 @@ jobs:
             # Manual run: input MUST include n8n@ prefix (e.g. n8n@1.107.4-iam)
             RAW="${INPUT_TAG}"
             VERSION="${RAW#n8n@}"
+            TAGS="${BASE}:${VERSION}"
+            CLEAN_VERSION="${VERSION}"
+          elif [[ "${EVENT}" == "repository_dispatch" ]]; then
+            RAW="${{ github.event.client_payload.image_tag }}"
+            if [[ "${RAW}" == n8n@* ]]; then
+              VERSION="${RAW#n8n@}"   # strip n8n@ prefix if present
+            else
+              VERSION="${RAW}"
+            fi
             TAGS="${BASE}:${VERSION}"
             CLEAN_VERSION="${VERSION}"
           elif [[ "${REF}" == refs/tags/* ]]; then
