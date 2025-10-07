@@ -15,7 +15,7 @@ import { resolve } from 'path';
 import { AbstractServer } from '@/abstract-server';
 import { AuthService } from '@/auth/auth.service';
 import config from '@/config';
-import { CLI_DIR, EDITOR_UI_DIST_DIR, inE2ETests } from '@/constants';
+import { CLI_DIR, EDITOR_UI_DIST_DIR, inE2ETests, N8N_VERSION } from '@/constants';
 import { ControllerRegistry } from '@/controller.registry';
 import { CredentialsOverwrites } from '@/credentials-overwrites';
 import { MessageEventBus } from '@/eventbus/message-event-bus/message-event-bus';
@@ -280,6 +280,24 @@ export class Server extends AbstractServer {
 				`/${this.restEndpoint}/settings`,
 				ResponseHelper.send(async () => frontendService.getSettings()),
 			);
+
+			this.app.get(`/${this.restEndpoint}/config.js`, (_req, res) => {
+				const frontendSentryConfig = JSON.stringify({
+					dsn: this.globalConfig.sentry.frontendDsn,
+					environment: process.env.ENVIRONMENT || 'development',
+					serverName: process.env.DEPLOYMENT_NAME,
+					release: `n8n@${N8N_VERSION}`,
+				});
+				const repoUrl = process.env.N8N_MAIN_GITHUB_REPO_URL || 'https://github.com/n8n-io/n8n';
+				const frontendConfig = [
+					`window.REST_ENDPOINT = '${this.globalConfig.endpoints.rest}';`,
+					`window.sentry = ${frontendSentryConfig};`,
+					`window.N8N_MAIN_GITHUB_REPO_URL = '${repoUrl}';`,
+				].join('\n');
+
+				res.type('application/javascript');
+				res.send(frontendConfig);
+			});
 		}
 
 		// ----------------------------------------
