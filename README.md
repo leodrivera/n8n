@@ -2,6 +2,15 @@
 
 # n8n - Secure Workflow Automation for Technical Teams
 
+> **Note:** This is a fork of n8n that implements the feature from [PR #18026](https://github.com/n8n-io/n8n/pull/18026)
+>
+> **Feature: AWS System Credentials Support**  
+> This fork adds the ability to use AWS system credentials (IAM roles) instead of static access/secret keys. This enables:
+> - ✅ Using IAM roles in Kubernetes/EKS environments (IRSA, Pod Identity)
+> - ✅ Secure credential management without storing static keys
+> - ✅ Seamless integration with cloud-native AWS deployments
+> - ✅ Quick local development with AWS CLI configured credentials
+
 n8n is a workflow automation platform that gives technical teams the flexibility of code with the speed of no-code. With 400+ integrations, native AI capabilities, and a fair-code license, n8n lets you build powerful automations while maintaining full control over your data and deployments.
 
 ![n8n.io - Screenshot](https://raw.githubusercontent.com/n8n-io/n8n/master/assets/n8n-screenshot-readme.png)
