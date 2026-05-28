@@ -1,7 +1,9 @@
+import type { InstanceType } from '@n8n/constants';
 import { ModuleMetadata } from '@n8n/decorators';
 import type { EntityClass, ModuleContext, ModuleSettings } from '@n8n/decorators';
 import { Container, Service } from '@n8n/di';
 import { existsSync } from 'fs';
+import type { NodeLoader } from 'n8n-workflow';
 import path from 'path';
 
 import { MissingModuleError } from './errors/missing-module.error';
@@ -15,7 +17,7 @@ import { Logger } from '../logging/logger';
 export class ModuleRegistry {
 	readonly entities: EntityClass[] = [];
 
-	readonly loadDirs: string[] = [];
+	readonly nodeLoaders: NodeLoader[] = [];
 
 	readonly settings: Map<string, ModuleSettings> = new Map();
 
@@ -32,6 +34,30 @@ export class ModuleRegistry {
 		'insights',
 		'external-secrets',
 		'community-packages',
+		'data-table',
+		'mcp',
+		'provisioning',
+		'breaking-changes',
+		'source-control',
+		'dynamic-credentials',
+		'chat-hub',
+		'sso-oidc',
+		'sso-saml',
+		'log-streaming',
+		'ldap',
+		'quick-connect',
+		'workflow-builder',
+		'favorites',
+		'redaction',
+		'instance-registry',
+		'otel',
+		'token-exchange',
+		'instance-version-history',
+		'encryption-key-manager',
+		'oauth-jwe',
+		'n8n-packages',
+		'runtime-credentials',
+		'mcp-registry',
 	];
 
 	private readonly activeModules: string[] = [];
@@ -75,11 +101,20 @@ export class ModuleRegistry {
 		for (const moduleName of modules ?? this.eligibleModules) {
 			try {
 				await import(`${modulesDir}/${moduleName}/${moduleName}.module`);
-			} catch {
+			} catch (primaryError) {
 				try {
 					await import(`${modulesDir}/${moduleName}.ee/${moduleName}.module`);
 				} catch (error) {
-					throw new MissingModuleError(moduleName, error instanceof Error ? error.message : '');
+					const loggedError =
+						primaryError instanceof Error &&
+						'code' in primaryError &&
+						primaryError.code !== 'MODULE_NOT_FOUND'
+							? primaryError
+							: error;
+					throw new MissingModuleError(
+						moduleName,
+						loggedError instanceof Error ? loggedError.message : '',
+					);
 				}
 			}
 		}
@@ -89,9 +124,11 @@ export class ModuleRegistry {
 
 			if (entities?.length) this.entities.push(...entities);
 
-			const loadDir = await Container.get(ModuleClass).loadDir?.();
+			const loaders = await Container.get(ModuleClass).nodeLoaders?.();
 
-			if (loadDir) this.loadDirs.push(loadDir);
+			if (loaders?.length) this.nodeLoaders.push(...loaders);
+
+			await Container.get(ModuleClass).commands?.();
 		}
 	}
 
@@ -103,12 +140,19 @@ export class ModuleRegistry {
 	 *
 	 * `ModuleRegistry.loadModules` must have been called before.
 	 */
-	async initModules() {
+	async initModules(instanceType: InstanceType) {
 		for (const [moduleName, moduleEntry] of this.moduleMetadata.getEntries()) {
-			const { licenseFlag, class: ModuleClass } = moduleEntry;
+			const { licenseFlag, instanceTypes, class: ModuleClass } = moduleEntry;
 
-			if (licenseFlag && !this.licenseState.isLicensed(licenseFlag)) {
+			if (licenseFlag !== undefined && !this.licenseState.isLicensed(licenseFlag)) {
 				this.logger.debug(`Skipped init for unlicensed module "${moduleName}"`);
+				continue;
+			}
+
+			if (instanceTypes !== undefined && !instanceTypes.includes(instanceType)) {
+				this.logger.debug(
+					`Skipped init for module "${moduleName}" (instance type "${instanceType}" not in: ${instanceTypes.join(', ')})`,
+				);
 				continue;
 			}
 
@@ -126,6 +170,31 @@ export class ModuleRegistry {
 
 			this.activeModules.push(moduleName);
 		}
+	}
+
+	/**
+	 * Refreshes the settings for a specific module by calling its `settings` method.
+	 * This will make sure that any changes to the module's settings are reflected in the registry
+	 * and in turn available to other parts of the application (like front-end settings service).
+	 * If the module does not provide settings, it removes any existing settings for that module.
+	 */
+	async refreshModuleSettings(moduleName: ModuleName) {
+		const moduleEntry = this.moduleMetadata.get(moduleName);
+
+		if (!moduleEntry) {
+			this.logger.debug('Skipping settings refresh for unregistered module', { moduleName });
+			return null;
+		}
+
+		const moduleSettings = await Container.get(moduleEntry.class).settings?.();
+
+		if (moduleSettings) {
+			this.settings.set(moduleName, moduleSettings);
+		} else {
+			this.settings.delete(moduleName);
+		}
+
+		return moduleSettings ?? null;
 	}
 
 	async shutdownModule(moduleName: ModuleName) {

@@ -2,29 +2,33 @@ import type {
 	IExecuteFunctions,
 	INodeExecutionData,
 	AllEntities,
-	NodeOperationError,
+	DataTableRowOperation,
+	DataTableTableOperation,
 } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 import * as row from './row/Row.resource';
+import * as table from './table/Table.resource';
 import { DATA_TABLE_ID_FIELD } from '../common/fields';
 import { getDataTableProxyExecute } from '../common/utils';
 
 type DataTableNodeType = AllEntities<{
-	row: 'insert' | 'get' | 'deleteRows' | 'update' | 'upsert';
+	row: DataTableRowOperation;
+	table: DataTableTableOperation;
 }>;
 
 const BULK_OPERATIONS = ['insert'] as const;
 
-function canBulk(operation: string): operation is (typeof BULK_OPERATIONS)[number] {
+function hasBulkExecute(operation: string): operation is (typeof BULK_OPERATIONS)[number] {
 	return (BULK_OPERATIONS as readonly string[]).includes(operation);
 }
 
 function hasComplexId(ctx: IExecuteFunctions) {
-	const dataStoreIdExpr = ctx.getNodeParameter(`${DATA_TABLE_ID_FIELD}.value`, 0, undefined, {
+	const dataTableIdExpr = ctx.getNodeParameter(`${DATA_TABLE_ID_FIELD}.value`, 0, undefined, {
 		rawExpressions: true,
 	});
 
-	return typeof dataStoreIdExpr === 'string' && dataStoreIdExpr.includes('{');
+	return typeof dataTableIdExpr === 'string' && dataTableIdExpr.includes('{');
 }
 
 export async function router(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
@@ -40,8 +44,37 @@ export async function router(this: IExecuteFunctions): Promise<INodeExecutionDat
 		operation,
 	} as DataTableNodeType;
 
-	// If the operation supports
-	if (canBulk(dataTableNodeData.operation) && !hasComplexId(this)) {
+	if (dataTableNodeData.resource === 'table') {
+		// Table operations
+		for (let i = 0; i < items.length; i++) {
+			try {
+				const tableOperation =
+					dataTableNodeData.operation === 'delete'
+						? table.deleteTable
+						: table[dataTableNodeData.operation];
+				responseData = await tableOperation.execute.call(this, i);
+				const executionData = this.helpers.constructExecutionMetaData(responseData, {
+					itemData: { item: i },
+				});
+				operationResult = operationResult.concat(executionData);
+			} catch (error) {
+				if (this.continueOnFail()) {
+					const inputData = this.getInputData(i)[0].json;
+					if (error instanceof NodeApiError || error instanceof NodeOperationError) {
+						operationResult.push({ json: inputData, error });
+					} else {
+						operationResult.push({
+							json: inputData,
+							error: new NodeOperationError(this.getNode(), error as Error),
+						});
+					}
+				} else {
+					throw error;
+				}
+			}
+		}
+	} else if (hasBulkExecute(dataTableNodeData.operation) && !hasComplexId(this)) {
+		// Row bulk operations
 		try {
 			const proxy = await getDataTableProxyExecute(this);
 
@@ -50,15 +83,17 @@ export async function router(this: IExecuteFunctions): Promise<INodeExecutionDat
 			operationResult = responseData;
 		} catch (error) {
 			if (this.continueOnFail()) {
-				operationResult = this.getInputData().map((json) => ({
-					json,
-					error: error as NodeOperationError,
-				}));
+				if (error instanceof NodeApiError || error instanceof NodeOperationError) {
+					operationResult = this.getInputData().map((json) => ({ json, error }));
+				} else {
+					operationResult = this.getInputData().map((json) => ({ json }));
+				}
 			} else {
 				throw error;
 			}
 		}
 	} else {
+		// Row operations
 		for (let i = 0; i < items.length; i++) {
 			try {
 				responseData = await row[dataTableNodeData.operation].execute.call(this, i);
@@ -66,13 +101,16 @@ export async function router(this: IExecuteFunctions): Promise<INodeExecutionDat
 					itemData: { item: i },
 				});
 
-				operationResult.push.apply(operationResult, executionData);
+				// pushing here risks stack overflows for very high numbers (~100k) of results on filter-based queries (update, get, etc.)
+				operationResult = operationResult.concat(executionData);
 			} catch (error) {
 				if (this.continueOnFail()) {
-					operationResult.push({
-						json: this.getInputData(i)[0].json,
-						error: error as NodeOperationError,
-					});
+					const inputData = this.getInputData(i)[0].json;
+					if (error instanceof NodeApiError || error instanceof NodeOperationError) {
+						operationResult.push({ json: inputData, error });
+					} else {
+						operationResult.push({ json: inputData });
+					}
 				} else {
 					throw error;
 				}

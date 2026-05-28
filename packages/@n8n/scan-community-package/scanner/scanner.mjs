@@ -1,22 +1,56 @@
 #!/usr/bin/env node
 
-import fs from "fs";
-import path from "path";
-import { ESLint } from "eslint";
-import { spawnSync } from "child_process";
-import tmp from "tmp";
-import semver from "semver";
-import axios from "axios";
-import glob from "fast-glob";
-import { fileURLToPath } from "url";
-import { defineConfig } from "eslint/config";
+import fs from 'fs';
+import path from 'path';
+import { ESLint } from 'eslint';
+import { spawnSync } from 'child_process';
+import tmp from 'tmp';
+import semver from 'semver';
+import axios from 'axios';
+import glob from 'fast-glob';
+import { fileURLToPath } from 'url';
+import { defineConfig } from 'eslint/config';
 
-import plugin from "./eslint-plugin.mjs";
+import { checkPackageProvenance } from './provenance.mjs';
 
 const { stdout } = process;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = tmp.dirSync({ unsafeCleanup: true }).name;
-const registry = "https://registry.npmjs.org/";
+const registry = 'https://registry.npmjs.org/';
+
+/**
+ * Checks if the given childPath is contained within the parentPath. Resolves
+ * the paths before comparing them, so that relative paths are also supported.
+ */
+export function isContainedWithin(parentPath, childPath) {
+	parentPath = path.resolve(parentPath);
+	childPath = path.resolve(childPath);
+
+	if (parentPath === childPath) {
+		return true;
+	}
+
+	return childPath.startsWith(parentPath + path.sep);
+}
+
+/**
+ * Joins the given paths to the parentPath, ensuring that the resulting path
+ * is still contained within the parentPath. If not, it throws an error to
+ * prevent path traversal vulnerabilities.
+ *
+ * @throws {UnexpectedError} If the resulting path is not contained within the parentPath.
+ */
+export function safeJoinPath(parentPath, ...paths) {
+	const candidate = path.join(parentPath, ...paths);
+
+	if (!isContainedWithin(parentPath, candidate)) {
+		throw new Error(
+			`Path traversal detected, refusing to join paths: ${parentPath} and ${JSON.stringify(paths)}`,
+		);
+	}
+
+	return candidate;
+}
 
 export const resolvePackage = (packageSpec) => {
 	// Validate input to prevent command injection
@@ -25,10 +59,10 @@ export const resolvePackage = (packageSpec) => {
 	}
 
 	let packageName, version;
-	if (packageSpec.startsWith("@")) {
-		if (packageSpec.includes("@", 1)) {
+	if (packageSpec.startsWith('@')) {
+		if (packageSpec.includes('@', 1)) {
 			// Handle scoped packages with versions
-			const lastAtIndex = packageSpec.lastIndexOf("@");
+			const lastAtIndex = packageSpec.lastIndexOf('@');
 			return {
 				packageName: packageSpec.substring(0, lastAtIndex),
 				version: packageSpec.substring(lastAtIndex + 1),
@@ -39,38 +73,42 @@ export const resolvePackage = (packageSpec) => {
 		}
 	}
 	// Handle regular packages
-	const parts = packageSpec.split("@");
+	const parts = packageSpec.split('@');
 	return { packageName: parts[0], version: parts[1] || null };
 };
 
 const downloadAndExtractPackage = async (packageName, version) => {
 	try {
 		// Download the tarball using safe arguments
-		const npmResult = spawnSync('npm', ['-q', 'pack', `${packageName}@${version}`], { 
+		const npmResult = spawnSync('npm', ['-q', 'pack', `${packageName}@${version}`], {
 			cwd: TEMP_DIR,
-			stdio: 'pipe'
+			stdio: 'pipe',
+			shell: process.platform === 'win32',
 		});
 		if (npmResult.status !== 0) {
 			throw new Error(`npm pack failed: ${npmResult.stderr?.toString()}`);
 		}
-		const tarballName = fs
-			.readdirSync(TEMP_DIR)
-			.find((file) => file.endsWith(".tgz"));
+		const tarballName = fs.readdirSync(TEMP_DIR).find((file) => file.endsWith('.tgz'));
 		if (!tarballName) {
-			throw new Error("Tarball not found");
+			throw new Error('Tarball not found');
 		}
 
 		// Unpack the tarball
-		const packageDir = path.join(TEMP_DIR, `${packageName}-${version}`);
+		const packageDir = safeJoinPath(TEMP_DIR, `${packageName}-${version}`);
 		fs.mkdirSync(packageDir, { recursive: true });
-		const tarResult = spawnSync('tar', ['-xzf', tarballName, '-C', packageDir, '--strip-components=1'], {
-			cwd: TEMP_DIR,
-			stdio: 'pipe'
-		});
+		const tarResult = spawnSync(
+			'tar',
+			['-xzf', tarballName, '-C', packageDir, '--strip-components=1'],
+			{
+				cwd: TEMP_DIR,
+				stdio: 'pipe',
+				shell: process.platform === 'win32',
+			},
+		);
 		if (tarResult.status !== 0) {
 			throw new Error(`tar extraction failed: ${tarResult.stderr?.toString()}`);
 		}
-		fs.unlinkSync(path.join(TEMP_DIR, tarballName));
+		fs.unlinkSync(safeJoinPath(TEMP_DIR, tarballName));
 
 		return packageDir;
 	} catch (error) {
@@ -79,51 +117,55 @@ const downloadAndExtractPackage = async (packageName, version) => {
 	}
 };
 
-const analyzePackage = async (packageDir) => {
-	const { default: eslintPlugin } = await import("./eslint-plugin.mjs");
+export const analyzePackage = async (packageDir) => {
+	const { n8nCommunityNodesPlugin } = await import('@n8n/eslint-plugin-community-nodes');
+	const tsParser = await import('@typescript-eslint/parser');
+
 	const eslint = new ESLint({
 		cwd: packageDir,
 		allowInlineConfig: false,
 		overrideConfigFile: true,
-		overrideConfig: defineConfig([
+		overrideConfig: defineConfig(
+			n8nCommunityNodesPlugin.configs.recommended,
 			{
-				plugins: {
-					"n8n-community-packages": plugin,
-				},
-				rules: {
-					"n8n-community-packages/no-restricted-globals": "error",
-					"n8n-community-packages/no-restricted-imports": "error",
-				},
-				languageOptions: {
-					parserOptions: {
-						ecmaVersion: 2022,
-						sourceType: "commonjs",
-					},
-				},
+				rules: { 'no-console': 'error' },
 			},
-		]),
+			// JSON files (notably `package.json`) are not parseable by ESLint's
+			// default JS parser, so register the TypeScript parser for them. The
+			// community-nodes rules that gate on `package.json` walk a TSESTree
+			// `ObjectExpression` AST, which `@typescript-eslint/parser` produces
+			// when given a top-level JSON object literal.
+			{
+				files: ['**/*.json'],
+				languageOptions: { parser: tsParser.default ?? tsParser },
+			},
+		),
 	});
 
 	try {
-		const jsFiles = glob.sync("**/*.js", {
+		// Lint both JS and JSON files. JSON inclusion is required because rules
+		// such as `no-overrides-field`, `valid-peer-dependencies`, and
+		// `package-name-convention` only run against `package.json`. Without
+		// it the scanner silently skips every package.json-based rule.
+		const filesToLint = glob.sync(['**/*.js', '**/*.json'], {
 			cwd: packageDir,
 			absolute: true,
-			ignore: ["node_modules/**"],
+			ignore: ['node_modules/**', '**/package-lock.json'],
 		});
 
-		if (jsFiles.length === 0) {
-			return { passed: true, message: "No JavaScript files found to analyze" };
+		if (filesToLint.length === 0) {
+			return { passed: true, message: 'No files found to analyze' };
 		}
 
-		const results = await eslint.lintFiles(jsFiles);
+		const results = await eslint.lintFiles(filesToLint);
 		const violations = results.filter((result) => result.errorCount > 0);
 
 		if (violations.length > 0) {
-			const formatter = await eslint.loadFormatter("stylish");
+			const formatter = await eslint.loadFormatter('stylish');
 			const formattedResults = await formatter.format(results);
 			return {
 				passed: false,
-				message: "ESLint violations found",
+				message: 'ESLint violations found',
 				details: formattedResults,
 			};
 		}
@@ -142,10 +184,12 @@ const analyzePackage = async (packageDir) => {
 export const analyzePackageByName = async (packageName, version) => {
 	try {
 		let exactVersion = version;
+		let packageMetadata;
 
 		// If version is a range, get the latest matching version
 		if (version && semver.validRange(version) && !semver.valid(version)) {
 			const { data } = await axios.get(`${registry}/${packageName}`);
+			packageMetadata = data;
 			const versions = Object.keys(data.versions);
 			exactVersion = semver.maxSatisfying(versions, version);
 
@@ -157,21 +201,40 @@ export const analyzePackageByName = async (packageName, version) => {
 		// If no version specified, get the latest
 		if (!exactVersion) {
 			const { data } = await axios.get(`${registry}/${packageName}`);
-			exactVersion = data["dist-tags"].latest;
+			packageMetadata = data;
+			exactVersion = data['dist-tags'].latest;
 		}
 
+		packageMetadata ??= (await axios.get(`${registry}/${packageName}`)).data;
+		exactVersion = packageMetadata['dist-tags']?.[exactVersion] ?? exactVersion;
 		const label = `${packageName}@${exactVersion}`;
 
-		stdout.write(`Downloading ${label}...`);
-		const packageDir = await downloadAndExtractPackage(
-			packageName,
-			exactVersion,
-		);
-		if (stdout.TTY){
+		stdout.write(`Checking provenance for ${label}...`);
+		const provenanceResult = checkPackageProvenance(packageMetadata, exactVersion);
+		if (stdout.TTY) {
 			stdout.clearLine(0);
 			stdout.cursorTo(0);
 		}
-			stdout.write(`✅ Downloaded ${label} \n`);
+
+		if (!provenanceResult.passed) {
+			stdout.write(`❌ Provenance check failed for ${label} \n`);
+
+			return {
+				packageName,
+				version: exactVersion,
+				...provenanceResult,
+			};
+		}
+
+		stdout.write(`✅ Provenance check passed for ${label} \n`);
+
+		stdout.write(`Downloading ${label}...`);
+		const packageDir = await downloadAndExtractPackage(packageName, exactVersion);
+		if (stdout.TTY) {
+			stdout.clearLine(0);
+			stdout.cursorTo(0);
+		}
+		stdout.write(`✅ Downloaded ${label} \n`);
 
 		stdout.write(`Analyzing ${label}...`);
 		const analysisResult = await analyzePackage(packageDir);
