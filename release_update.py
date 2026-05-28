@@ -40,6 +40,7 @@ RELEASE_TAG_SUFFIX = "iam"
 CHERRY_PICK_COMMITS: list[str] = [
     "c74bd124b0",
     "3c71841c5f",
+    "01297c8feb",
 ]
 
 # ------------------------- Utilities -------------------------
@@ -161,8 +162,44 @@ def create_or_reset_release_branch(new_tag: str) -> str:
     run(f"git checkout -B {branch_name} refs/tags/{new_tag}", capture=False)
     return branch_name
 
+def _cherry_pick_in_progress() -> bool:
+    """Return True if a cherry-pick is currently in progress (unresolved)."""
+    git_dir = run("git rev-parse --git-dir", capture=True, check=False).strip() or ".git"
+    return os.path.exists(os.path.join(git_dir, "CHERRY_PICK_HEAD"))
+
+
+def _list_modify_delete_paths() -> list[str]:
+    """Return paths that are in a modify/delete conflict state (UD or DU)."""
+    out = run("git status --porcelain", capture=True, check=False)
+    paths: list[str] = []
+    for line in out.splitlines():
+        if len(line) < 4:
+            continue
+        code = line[:2]
+        path = line[3:].strip()
+        if code in ("UD", "DU"):
+            paths.append(path)
+    return paths
+
+
+def _has_remaining_conflicts() -> bool:
+    """True if any path is still in a conflict state."""
+    out = run("git status --porcelain", capture=True, check=False)
+    for line in out.splitlines():
+        if len(line) < 2:
+            continue
+        if line[:2] in ("UU", "AA", "DU", "UD", "DD", "AU", "UA"):
+            return True
+    return False
+
+
 def cherry_pick_commits(commits: list[str], strategy: str = "theirs"):
-    """Cherry-pick a list of commits onto the current branch using the given strategy."""
+    """Cherry-pick a list of commits onto the current branch using the given strategy.
+
+    Automatically resolves modify/delete conflicts by removing the deleted path
+    (the path was already removed in the release tag base; we accept that delete
+    and drop the cherry-pick's modification to it).
+    """
     if not commits:
         print("[cherry-pick] No commits specified, skipping.")
         return
@@ -180,7 +217,31 @@ def cherry_pick_commits(commits: list[str], strategy: str = "theirs"):
         else:
             cmd = f"git cherry-pick {sign_flag} -x -X {strategy} {sha}".strip()
         print(f"[cherry-pick] {sha}")
-        run(cmd, capture=False)
+        run(cmd, capture=False, check=False)
+        if not _cherry_pick_in_progress():
+            continue
+
+        # Cherry-pick paused on conflict. Try to auto-resolve modify/delete.
+        md_paths = _list_modify_delete_paths()
+        if not md_paths:
+            print(f"[cherry-pick] {sha} failed with no modify/delete conflicts to auto-resolve.")
+            sys.exit(1)
+
+        for path in md_paths:
+            print(f"[cherry-pick] auto-resolving modify/delete by removing: {path}")
+            run(f"git rm -f -- \"{path}\"", capture=False, check=False)
+
+        if _has_remaining_conflicts():
+            print(f"[cherry-pick] {sha} has unresolved conflicts after auto-resolution.")
+            sys.exit(1)
+
+        cont_flag = "-S" if use_gpg else ""
+        cont_cmd = f"git -c core.editor=true cherry-pick {cont_flag} --continue".strip()
+        run(cont_cmd, capture=False, check=False)
+        if _cherry_pick_in_progress():
+            print(f"[cherry-pick] {sha} continue failed.")
+            sys.exit(1)
+        print(f"[cherry-pick] {sha} resolved via modify/delete cleanup.")
 
 def remove_workflows_dir_from_release_branch():
     """Remove .github/workflows from the current branch and commit the deletion if present."""
