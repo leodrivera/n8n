@@ -39,7 +39,7 @@ RELEASE_TAG_SUFFIX = "iam"
 # Adjust this list as needed to include your customization commits.
 CHERRY_PICK_COMMITS: list[str] = [
     "bd173b9408",
-    "3c71841c5f",
+    "dbffb9bc8a",
     "01297c8feb",
 ]
 
