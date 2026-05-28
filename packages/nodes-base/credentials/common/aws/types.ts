@@ -208,6 +208,7 @@ export type AwsCredentialsTypeBase = {
 };
 
 export type AwsIamCredentialsType = AwsCredentialsTypeBase & {
+	credentialType?: 'accessKey' | 'systemCredential';
 	accessKeyId: string;
 	secretAccessKey: string;
 	temporaryCredentials: boolean;
