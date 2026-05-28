@@ -46,7 +46,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ steps.src.outputs.ref }}
@@ -54,13 +54,13 @@ jobs:
       # Install pnpm matching the "packageManager" field in package.json.
       # Do NOT specify "version" here to avoid conflicts.
       - name: Setup pnpm (from packageManager)
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           run_install: false
 
       # Install Node 22 and enable caching for pnpm
       - name: Setup Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -131,13 +131,13 @@ jobs:
 
       # 3) Enable multi-arch builds without custom runners
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -145,7 +145,7 @@ jobs:
 
       # 4) Build & push using the official Dockerfile from the repo
       - name: Build & Push (GHCR)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/images/n8n/Dockerfile

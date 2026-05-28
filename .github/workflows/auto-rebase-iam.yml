@@ -40,7 +40,7 @@ jobs:
     
     steps:
       - name: Checkout repository (workflows branch)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: workflows
@@ -111,7 +111,7 @@ jobs:
           git push origin ${{ env.custom_tag }}
 
       - name: Trigger GHCR publish workflow
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // Wait briefly to ensure the tag is visible to the API
