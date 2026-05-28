@@ -1,0 +1,157 @@
+name: Sync workflows branch with upstream/master
+
+on:
+  repository_dispatch:
+    types: [n8n-release]
+
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no push)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-workflows
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/n8n-io/n8n.git
+  WHITELIST: "auto-rebase-iam.yml publish-ghcr.yml trigger-rebase-on-release.yml sync-from-upstream.yml"
+
+jobs:
+  sync:
+    name: Merge upstream/master and clean workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout workflows branch
+        uses: actions/checkout@v4
+        with:
+          ref: workflows
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+          gpg --list-secret-keys --keyid-format=long
+
+      - name: Configure Git
+        run: |
+          git config user.name "Leonardo Rivera"
+          git config user.email "leodrivera@gmail.com"
+          git config user.signingkey "${{ secrets.GPG_SIGNING_KEY }}"
+          git config commit.gpgsign true
+
+      - name: Add upstream remote and fetch
+        run: |
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream "${UPSTREAM_URL}"
+          git fetch upstream master --no-tags
+
+      - name: Check divergence
+        id: divergence
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/master)
+          AHEAD=$(git rev-list --count upstream/master..HEAD)
+          echo "behind=${BEHIND}" >> "$GITHUB_OUTPUT"
+          echo "ahead=${AHEAD}" >> "$GITHUB_OUTPUT"
+          echo "Behind upstream/master: ${BEHIND}"
+          echo "Ahead of upstream/master: ${AHEAD}"
+          if [ "$BEHIND" = "0" ]; then
+            echo "Already up to date."
+            echo "needs_sync=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_sync=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream/master
+        if: steps.divergence.outputs.needs_sync == 'true'
+        id: merge
+        run: |
+          set +e
+          git merge upstream/master --no-edit
+          MERGE_EXIT=$?
+          set -e
+
+          if [ $MERGE_EXIT -eq 0 ]; then
+            echo "Merge clean."
+            exit 0
+          fi
+
+          echo "Merge has conflicts. Attempting auto-resolution for .github/workflows/* ..."
+
+          # Auto-resolve modify/delete and rename/delete conflicts in .github/workflows/
+          # by deleting the file (fork policy: only whitelisted workflows are kept).
+          CONFLICTED=$(git status --porcelain | awk '/^(DU|UD|AU|UA) / {print $2}')
+          for f in $CONFLICTED; do
+            if [[ "$f" == .github/workflows/* ]]; then
+              echo "Resolving (delete) $f"
+              git rm -f "$f"
+            fi
+          done
+
+          # Any remaining conflicts must be handled by a human.
+          REMAINING=$(git status --porcelain | grep -E "^(UU|AA|DU|UD|DD|AU|UA) " || true)
+          if [ -n "$REMAINING" ]; then
+            echo "::error::Unresolved conflicts remain outside .github/workflows/. Manual sync required."
+            echo "$REMAINING"
+            git merge --abort
+            exit 1
+          fi
+
+          git commit --no-edit -m "Merge upstream/master into workflows (auto-resolved workflow conflicts)"
+
+      - name: Remove non-whitelisted workflows
+        if: steps.divergence.outputs.needs_sync == 'true'
+        id: cleanup
+        run: |
+          cd .github/workflows
+          REMOVED=0
+          for f in *.yml; do
+            keep=false
+            for w in $WHITELIST; do
+              if [ "$f" = "$w" ]; then
+                keep=true
+                break
+              fi
+            done
+            if [ "$keep" = "false" ]; then
+              echo "Removing non-whitelisted workflow: $f"
+              git rm -f "$f"
+              REMOVED=$((REMOVED+1))
+            fi
+          done
+          echo "removed=${REMOVED}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit cleanup
+        if: steps.divergence.outputs.needs_sync == 'true' && steps.cleanup.outputs.removed != '0'
+        run: |
+          if git diff --cached --quiet; then
+            echo "Nothing to commit for cleanup."
+          else
+            git commit -m "chore: Remove upstream workflows not in fork whitelist"
+          fi
+
+      - name: Push to origin/workflows
+        if: steps.divergence.outputs.needs_sync == 'true' && github.event.inputs.dry_run != 'true'
+        run: |
+          git push origin workflows
+
+      - name: Summary
+        run: |
+          echo "Behind before sync: ${{ steps.divergence.outputs.behind }}"
+          echo "Ahead before sync:  ${{ steps.divergence.outputs.ahead }}"
+          echo "Workflows removed:  ${{ steps.cleanup.outputs.removed || 0 }}"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "Dry run: no push performed."
+          fi
