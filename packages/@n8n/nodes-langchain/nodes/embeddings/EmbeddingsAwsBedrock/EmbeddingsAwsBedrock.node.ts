@@ -3,7 +3,12 @@ import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
 import { BedrockEmbeddings } from '@langchain/aws';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { getNodeProxyAgent, logWrapper, getConnectionHintNoticeField } from '@n8n/ai-utilities';
+<<<<<<< HEAD
 import { awsNodeAuthOptions, awsNodeCredentials } from 'n8n-nodes-base/dist/nodes/Aws/utils';
+=======
+import type { AwsIamCredentialsType } from 'n8n-nodes-base/dist/credentials/common/aws/types';
+import { getAwsCredentialProvider } from 'n8n-nodes-base/dist/credentials/common/aws/utils';
+>>>>>>> bd173b9408 (feat(Aws): Add option to use systems credentials for AWS (IAM))
 
 import {
 	NodeConnectionTypes,
@@ -106,11 +111,21 @@ export class EmbeddingsAwsBedrock implements INodeType {
 	};
 
 	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
+<<<<<<< HEAD
 		const { region, credentials } = await resolveAwsCredentials(this, itemIndex);
 		const modelName = this.getNodeParameter('model', itemIndex) as string;
 
 		const bedrockEndpoint = `https://bedrock-runtime.${region}.amazonaws.com`;
 		const proxyAgent = getNodeProxyAgent(bedrockEndpoint);
+=======
+		const credentials = await this.getCredentials<AwsIamCredentialsType>('aws');
+		const modelName = this.getNodeParameter('model', itemIndex) as string;
+
+		const clientConfig: BedrockRuntimeClientConfig = {
+			region: credentials.region,
+			credentials: getAwsCredentialProvider(credentials),
+		};
+>>>>>>> bd173b9408 (feat(Aws): Add option to use systems credentials for AWS (IAM))
 
 		const clientConfig: BedrockRuntimeClientConfig = {
 			region,
