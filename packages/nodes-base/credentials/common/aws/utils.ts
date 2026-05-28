@@ -16,6 +16,7 @@ import {
 	regions,
 	type AWSRegion,
 	type AwsAssumeRoleCredentialsType,
+	type AwsIamCredentialsType,
 	type AwsSecurityHeaders,
 } from './types';
 import { sign } from 'aws4';
@@ -402,4 +403,52 @@ export function signOptions(
 	};
 
 	return options;
+}
+
+/**
+ * Resolve AWS security headers from an `Aws (IAM)` credential.
+ *
+ * Returns the explicit access key headers when `credentialType` is `accessKey`
+ * (the default). When `credentialType` is `systemCredential`, falls through to
+ * the AWS credential resolver chain (env vars, IRSA, pod identity, ECS, EC2
+ * instance metadata) via `getSystemCredentials()`, which is gated by the
+ * `N8N_AWS_SYSTEM_CREDENTIALS_ACCESS_ENABLED` setting.
+ */
+export async function getAwsSecurityHeaders(
+	credentials: AwsIamCredentialsType,
+): Promise<AwsSecurityHeaders> {
+	const credentialType = credentials.credentialType ?? 'accessKey';
+
+	if (credentialType === 'systemCredential') {
+		const systemCredentials = await getSystemCredentials();
+		if (!systemCredentials) {
+			throw new Error(
+				'System AWS credentials are unavailable. Make sure they are reachable via environment variables, IRSA, pod identity, container metadata, or instance metadata.',
+			);
+		}
+		return {
+			accessKeyId: systemCredentials.accessKeyId,
+			secretAccessKey: systemCredentials.secretAccessKey,
+			sessionToken: systemCredentials.sessionToken,
+		};
+	}
+
+	return {
+		accessKeyId: `${credentials.accessKeyId}`.trim(),
+		secretAccessKey: `${credentials.secretAccessKey}`.trim(),
+		sessionToken: credentials.temporaryCredentials
+			? `${credentials.sessionToken ?? ''}`.trim()
+			: undefined,
+	};
+}
+
+/**
+ * Build an AWS SDK credential provider function from an `Aws (IAM)` credential.
+ *
+ * The returned function matches the `AwsCredentialIdentityProvider` shape
+ * expected by the AWS JS SDK v3, so it can be passed directly to clients like
+ * `BedrockChat` or `BedrockEmbeddings`.
+ */
+export function getAwsCredentialProvider(credentials: AwsIamCredentialsType) {
+	return async () => await getAwsSecurityHeaders(credentials);
 }
