@@ -171,6 +171,9 @@ jobs:
                 release_tag: releaseTag,
                 patch_branch: patchBranch,
               },
+              headers: {
+                'X-GitHub-Api-Version': '2026-03-10',
+              },
             });
 
       - name: Summary

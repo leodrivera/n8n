@@ -126,7 +126,10 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               event_type: 'n8n-iam-tag-created',
-              client_payload: { image_tag: imageTag }
+              client_payload: { image_tag: imageTag },
+              headers: {
+                'X-GitHub-Api-Version': '2026-03-10',
+              },
             });
 
 

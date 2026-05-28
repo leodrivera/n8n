@@ -83,7 +83,10 @@ jobs:
                 release_tag: releaseTag,
                 patch_branch: 'iam',
                 dry_run: 'false'
-              }
+              },
+              headers: {
+                'X-GitHub-Api-Version': '2026-03-10',
+              },
             });
 
             console.log('Sync workflow triggered. It will chain into auto-rebase-iam on completion.');
