@@ -8,6 +8,8 @@ import {
 	getConnectionHintNoticeField,
 } from '@n8n/ai-utilities';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
+import type { AwsIamCredentialsType } from 'n8n-nodes-base/dist/credentials/common/aws/types';
+import { getAwsCredentialProvider } from 'n8n-nodes-base/dist/credentials/common/aws/utils';
 
 import {
 	NodeConnectionTypes,
@@ -234,12 +236,7 @@ export class LmChatAwsBedrock implements INodeType {
 	};
 
 	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
-		const credentials = await this.getCredentials<{
-			region: string;
-			secretAccessKey: string;
-			accessKeyId: string;
-			sessionToken: string;
-		}>('aws');
+		const credentials = await this.getCredentials<AwsIamCredentialsType>('aws');
 		const modelName = this.getNodeParameter('model', itemIndex) as string;
 		const options = this.getNodeParameter('options', itemIndex, {}) as {
 			temperature: number;
@@ -258,11 +255,7 @@ export class LmChatAwsBedrock implements INodeType {
 		const proxyAgent = getNodeProxyAgent();
 		const clientConfig: BedrockRuntimeClientConfig = {
 			region,
-			credentials: {
-				secretAccessKey: credentials.secretAccessKey,
-				accessKeyId: credentials.accessKeyId,
-				...(credentials.sessionToken && { sessionToken: credentials.sessionToken }),
-			},
+			credentials: getAwsCredentialProvider(credentials),
 		};
 
 		if (proxyAgent) {

@@ -14,6 +14,8 @@ import type {
 } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
 import { URL } from 'url';
+import type { AwsIamCredentialsType } from '../../../credentials/common/aws/types';
+import { getAwsSecurityHeaders } from '../../../credentials/common/aws/utils';
 
 function getEndpointForService(
 	service: string,
@@ -45,13 +47,7 @@ export async function awsApiRequest(
 
 	// Sign AWS API request with the user credentials
 	const signOpts = { headers: headers || {}, host: endpoint.host, method, path, body } as Request;
-	const securityHeaders = {
-		accessKeyId: `${credentials.accessKeyId}`.trim(),
-		secretAccessKey: `${credentials.secretAccessKey}`.trim(),
-		sessionToken: credentials.temporaryCredentials
-			? `${credentials.sessionToken}`.trim()
-			: undefined,
-	};
+	const securityHeaders = await getAwsSecurityHeaders(credentials as AwsIamCredentialsType);
 
 	sign(signOpts, securityHeaders);
 
