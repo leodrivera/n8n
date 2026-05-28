@@ -32,7 +32,7 @@ const aiAssistantPackageJson = jsonParse<n8n.PackageJson>(
 const workflowSdkPackageJson = jsonParse<n8n.PackageJson>(
 	readFileSync(workflowSdkPackageJsonPath, 'utf8'),
 );
-export const N8N_VERSION = n8nPackageJson.version;
+export const N8N_VERSION = process.env.N8N_VERSION || n8nPackageJson.version;
 export const AI_ASSISTANT_SDK_VERSION = aiAssistantPackageJson.version;
 export const WORKFLOW_SDK_VERSION = workflowSdkPackageJson.version;
 export const N8N_RELEASE_DATE = statSync(packageJsonPath).mtime;
