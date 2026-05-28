@@ -38,7 +38,7 @@ RELEASE_TAG_SUFFIX = "iam"
 # Commits to cherry-pick on top of the upstream release tag.
 # Adjust this list as needed to include your customization commits.
 CHERRY_PICK_COMMITS: list[str] = [
-    "c74bd124b0",
+    "bd173b9408",
     "3c71841c5f",
     "01297c8feb",
 ]
