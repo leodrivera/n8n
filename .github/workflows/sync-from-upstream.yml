@@ -1,13 +1,19 @@
 name: Sync workflows branch with upstream/master
 
 on:
-  repository_dispatch:
-    types: [n8n-release]
-
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: 'Upstream release tag to chain into auto-rebase-iam after sync (e.g., n8n@1.112.0). Leave empty to sync only.'
+        required: false
+        type: string
+      patch_branch:
+        description: 'Patch branch name to pass to auto-rebase-iam'
+        required: false
+        default: 'iam'
+        type: string
       dry_run:
-        description: 'Dry run (no push)'
+        description: 'Dry run (no push, no chain)'
         required: false
         default: 'false'
         type: choice
@@ -17,6 +23,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: sync-upstream-workflows
@@ -147,6 +154,25 @@ jobs:
         run: |
           git push origin workflows
 
+      - name: Chain auto-rebase-iam when release_tag provided
+        if: github.event.inputs.release_tag != '' && github.event.inputs.dry_run != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const releaseTag = '${{ github.event.inputs.release_tag }}';
+            const patchBranch = '${{ github.event.inputs.patch_branch }}' || 'iam';
+            console.log(`Dispatching auto-rebase-iam.yml with release_tag=${releaseTag} patch_branch=${patchBranch}`);
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'auto-rebase-iam.yml',
+              ref: 'workflows',
+              inputs: {
+                release_tag: releaseTag,
+                patch_branch: patchBranch,
+              },
+            });
+
       - name: Summary
         run: |
           echo "Behind before sync: ${{ steps.divergence.outputs.behind }}"
@@ -154,4 +180,7 @@ jobs:
           echo "Workflows removed:  ${{ steps.cleanup.outputs.removed || 0 }}"
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             echo "Dry run: no push performed."
+          fi
+          if [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            echo "Chained auto-rebase-iam for tag: ${{ github.event.inputs.release_tag }}"
           fi

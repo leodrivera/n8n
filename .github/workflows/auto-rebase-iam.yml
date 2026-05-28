@@ -1,11 +1,8 @@
 name: Create release branch from n8n upstream tag
 
 on:
-  # Trigger when a new release is published to n8n-io/n8n
-  repository_dispatch:
-    types: [n8n-release]
-  
-  # Also trigger on workflow_dispatch for manual testing
+  # Triggered by sync-from-upstream.yml after it syncs the workflows branch,
+  # or manually via the Actions UI for testing.
   workflow_dispatch:
     inputs:
       release_tag:
@@ -75,13 +72,9 @@ jobs:
       - name: Determine parameters
         id: params
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RAW_TAG="${{ github.event.inputs.release_tag }}"
-            STRATEGY="${{ github.event.inputs.strategy }}"
-          else
-            RAW_TAG=$(echo '${{ github.event.client_payload.release_tag }}' | tr -d '"')
-            STRATEGY="theirs"
-          fi
+          RAW_TAG="${{ github.event.inputs.release_tag }}"
+          STRATEGY="${{ github.event.inputs.strategy }}"
+          STRATEGY="${STRATEGY:-theirs}"
 
           echo "tag=${RAW_TAG}" >> $GITHUB_OUTPUT
           echo "strategy=${STRATEGY}" >> $GITHUB_OUTPUT
