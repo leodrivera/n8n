@@ -16,6 +16,8 @@ import { NodeApiError, sanitizeXmlName } from 'n8n-workflow';
 import { URL } from 'url';
 import { parseString } from 'xml2js';
 import { getAwsCredentials } from '../GenericFunctions';
+import type { AwsIamCredentialsType } from '../../../credentials/common/aws/types';
+import { getAwsSecurityHeaders } from '../../../credentials/common/aws/utils';
 
 function getEndpointForService(
 	service: string,
@@ -161,13 +163,7 @@ export async function validateCredentials(
 		method: 'POST',
 		path: '?Action=GetCallerIdentity&Version=2011-06-15',
 	} as Request;
-	const securityHeaders = {
-		accessKeyId: `${credentials.accessKeyId}`.trim(),
-		secretAccessKey: `${credentials.secretAccessKey}`.trim(),
-		sessionToken: credentials.temporaryCredentials
-			? `${credentials.sessionToken}`.trim()
-			: undefined,
-	};
+	const securityHeaders = await getAwsSecurityHeaders(credentials as AwsIamCredentialsType);
 
 	sign(signOpts, securityHeaders);
 

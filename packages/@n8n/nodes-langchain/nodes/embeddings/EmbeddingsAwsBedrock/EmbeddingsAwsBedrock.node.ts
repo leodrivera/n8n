@@ -3,6 +3,8 @@ import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
 import { BedrockEmbeddings } from '@langchain/aws';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { getNodeProxyAgent, logWrapper, getConnectionHintNoticeField } from '@n8n/ai-utilities';
+import type { AwsIamCredentialsType } from 'n8n-nodes-base/dist/credentials/common/aws/types';
+import { getAwsCredentialProvider } from 'n8n-nodes-base/dist/credentials/common/aws/utils';
 
 import {
 	NodeConnectionTypes,
@@ -106,21 +108,12 @@ export class EmbeddingsAwsBedrock implements INodeType {
 	};
 
 	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
-		const credentials = await this.getCredentials<{
-			region: string;
-			secretAccessKey: string;
-			accessKeyId: string;
-			sessionToken: string;
-		}>('aws');
+		const credentials = await this.getCredentials<AwsIamCredentialsType>('aws');
 		const modelName = this.getNodeParameter('model', itemIndex) as string;
 
 		const clientConfig: BedrockRuntimeClientConfig = {
 			region: credentials.region,
-			credentials: {
-				secretAccessKey: credentials.secretAccessKey,
-				accessKeyId: credentials.accessKeyId,
-				sessionToken: credentials.sessionToken,
-			},
+			credentials: getAwsCredentialProvider(credentials),
 		};
 
 		const proxyAgent = getNodeProxyAgent();

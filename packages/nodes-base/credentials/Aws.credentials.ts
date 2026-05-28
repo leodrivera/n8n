@@ -9,6 +9,7 @@ import type { AwsIamCredentialsType, AWSRegion } from './common/aws/types';
 import {
 	awsCredentialsTest,
 	awsGetSignInOptionsAndUpdateRequest,
+	getAwsSecurityHeaders,
 	signOptions,
 } from './common/aws/utils';
 import { awsCustomEndpoints, awsRegionProperty } from './common/aws/descriptions';
@@ -25,15 +26,44 @@ export class Aws implements ICredentialType {
 	properties: INodeProperties[] = [
 		awsRegionProperty,
 		{
+			displayName: 'Credential Type',
+			name: 'credentialType',
+			type: 'options',
+			options: [
+				{
+					name: 'IAM Access Key',
+					value: 'accessKey',
+					description: 'Use IAM access key and secret key directly',
+				},
+				{
+					name: 'Systems',
+					value: 'systemCredential',
+					description:
+						'Use the default AWS credential provider chain (env vars, IRSA, pod identity, container metadata, instance metadata). Requires N8N_AWS_SYSTEM_CREDENTIALS_ACCESS_ENABLED=true.',
+				},
+			],
+			default: 'accessKey',
+		},
+		{
 			displayName: 'Access Key ID',
 			name: 'accessKeyId',
 			type: 'string',
+			displayOptions: {
+				show: {
+					credentialType: ['accessKey'],
+				},
+			},
 			default: '',
 		},
 		{
 			displayName: 'Secret Access Key',
 			name: 'secretAccessKey',
 			type: 'string',
+			displayOptions: {
+				show: {
+					credentialType: ['accessKey'],
+				},
+			},
 			default: '',
 			typeOptions: {
 				password: true,
@@ -44,6 +74,11 @@ export class Aws implements ICredentialType {
 			name: 'temporaryCredentials',
 			description: 'Support for temporary credentials from AWS STS',
 			type: 'boolean',
+			displayOptions: {
+				show: {
+					credentialType: ['accessKey'],
+				},
+			},
 			default: false,
 		},
 		{
@@ -52,6 +87,7 @@ export class Aws implements ICredentialType {
 			type: 'string',
 			displayOptions: {
 				show: {
+					credentialType: ['accessKey'],
 					temporaryCredentials: [true],
 				},
 			},
@@ -87,13 +123,7 @@ export class Aws implements ICredentialType {
 			region,
 		);
 
-		const securityHeaders = {
-			accessKeyId: `${credentials.accessKeyId}`.trim(),
-			secretAccessKey: `${credentials.secretAccessKey}`.trim(),
-			sessionToken: credentials.temporaryCredentials
-				? `${credentials.sessionToken}`.trim()
-				: undefined,
-		};
+		const securityHeaders = await getAwsSecurityHeaders(credentials);
 
 		return signOptions(requestOptions, signOpts, securityHeaders, url, method);
 	}
