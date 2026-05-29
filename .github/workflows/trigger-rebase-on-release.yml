@@ -32,23 +32,25 @@ jobs:
 
       - name: Get latest release from upstream
         id: latest-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "${{ github.event.inputs.release_tag }}" ]; then
             # Use manually specified tag
             LATEST_TAG="${{ github.event.inputs.release_tag }}"
             echo "Using manually specified tag: $LATEST_TAG"
           else
-            # Fetch latest release from GitHub API
+            # Fetch latest release from upstream via authenticated gh CLI
             echo "Fetching latest release from ${{ env.UPSTREAM_REPO }}..."
-            LATEST_TAG=$(curl -s "https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest" | jq -r '.tag_name')
-            if [ "$LATEST_TAG" = "null" ] || [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG=$(gh release view --repo "${{ env.UPSTREAM_REPO }}" --json tagName -q '.tagName')
+            if [ -z "$LATEST_TAG" ]; then
               echo "ERROR: Could not fetch latest release tag"
               exit 1
             fi
             echo "Latest release tag: $LATEST_TAG"
           fi
-          
-          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Check if we already processed this release
         id: check-processed
