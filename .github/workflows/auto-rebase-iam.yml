@@ -107,8 +107,10 @@ jobs:
       - name: Push release branch and tag
         run: |
           echo "Pushing branch ${{ env.release_branch }} and tag ${{ env.custom_tag }}"
-          git push -u origin ${{ env.release_branch }}
-          git push origin ${{ env.custom_tag }}
+          # Release branch and tag are regenerated from scratch each run (upstream tag + cherry-picks),
+          # so a divergent remote ref from a previous run is expected. Force-push to overwrite it.
+          git push -u origin ${{ env.release_branch }} --force
+          git push origin ${{ env.custom_tag }} --force
 
       - name: Trigger GHCR publish workflow
         uses: actions/github-script@v9
