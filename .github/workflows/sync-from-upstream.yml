@@ -20,6 +20,14 @@ on:
         options:
           - 'false'
           - 'true'
+      auto_merge:
+        description: 'Auto-merge the conflict-resolution PR when all validation gates pass'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: write
@@ -39,6 +47,10 @@ jobs:
     name: Merge upstream/master and clean workflows
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      conflict_branch: ${{ steps.merge.outputs.conflict_branch }}
+      conflicted_files: ${{ steps.merge.outputs.conflicted_files }}
+      pr_number: ${{ steps.conflict_pr.outputs.pr_number }}
 
     steps:
       - name: Checkout workflows branch
@@ -121,12 +133,33 @@ jobs:
               exit 1
             fi
 
-            # Push conflicted merge state to a dedicated branch so a human can
-            # resolve it via a draft PR instead of reconstructing the merge.
+            # Push conflicted merge state to a dedicated branch so the
+            # auto-resolve job (or a human) can finish it via a draft PR
+            # instead of reconstructing the merge.
             CONFLICT_BRANCH="sync-conflict-${GITHUB_RUN_ID}"
             git checkout -b "$CONFLICT_BRANCH"
             git add -A
             git commit -m "WIP: merge upstream/master with unresolved conflicts"
+
+            # Apply the fork whitelist policy on the conflict branch too, so the
+            # eventual merge of this branch is a complete sync.
+            pushd .github/workflows
+            for f in *.yml; do
+              keep=false
+              for w in $WHITELIST; do
+                if [ "$f" = "$w" ]; then
+                  keep=true
+                  break
+                fi
+              done
+              if [ "$keep" = "false" ]; then
+                echo "Removing non-whitelisted workflow: $f"
+                git rm -f "$f"
+              fi
+            done
+            popd
+            git diff --cached --quiet || git commit -m "chore: Remove upstream workflows not in fork whitelist"
+
             git push origin "$CONFLICT_BRANCH"
             {
               echo "conflict_branch=${CONFLICT_BRANCH}"
@@ -134,13 +167,16 @@ jobs:
               echo "$REMAINING"
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
-            exit 1
+            # Exit 0: the auto-resolve job picks up from here; remaining steps
+            # in this job are guarded by conflict_branch == ''.
+            exit 0
           fi
 
           git commit --no-edit -m "Merge upstream/master into workflows (auto-resolved workflow conflicts)"
 
-      - name: Open draft PR for manual conflict resolution
-        if: failure() && steps.merge.outputs.conflict_branch != ''
+      - name: Open draft PR for conflict resolution
+        if: steps.merge.outputs.conflict_branch != ''
+        id: conflict_pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CONFLICT_BRANCH: ${{ steps.merge.outputs.conflict_branch }}
@@ -149,17 +185,20 @@ jobs:
           # GITHUB_REPOSITORY is always the repo this workflow runs in (the fork).
           # Head branch has no owner prefix, so it resolves inside this repo only,
           # and GITHUB_TOKEN has no permissions on any other repo.
-          BODY=$(printf 'Automated sync hit conflicts outside `.github/workflows/` (run %s).\n\nConflicted files:\n```\n%s\n```\n\nThe branch contains the merge state **with conflict markers**. Resolve locally:\n\n```bash\ngit fetch origin %s\ngit checkout %s\n# resolve conflict markers, then:\ngit add -A\ngit commit --amend --no-edit\ngit push --force-with-lease origin %s\n```\n\nThen mark this PR ready for review and merge it into `workflows` (merge commit, not squash).' \
+          BODY=$(printf 'Automated sync hit conflicts outside `.github/workflows/` (run %s).\n\nConflicted files:\n```\n%s\n```\n\nThe branch contains the merge state **with conflict markers**. The auto-resolve job will attempt to resolve, validate and merge this PR. If it fails, resolve manually:\n\n```bash\ngit fetch origin %s\ngit checkout %s\n# resolve conflict markers, then:\ngit add -A\ngit commit -m "fix(sync): resolve upstream merge conflicts"\ngit push origin %s\n```\n\nThen mark this PR ready for review and merge it into `workflows` (merge commit, not squash).' \
             "${GITHUB_RUN_ID}" "${CONFLICTED_FILES}" "${CONFLICT_BRANCH}" "${CONFLICT_BRANCH}" "${CONFLICT_BRANCH}")
-          gh api "repos/${GITHUB_REPOSITORY}/pulls" \
-            -f title="Sync conflict: upstream/master into workflows (manual resolution required)" \
+          PR_NUMBER=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f title="Sync conflict: upstream/master into workflows" \
             -f head="${CONFLICT_BRANCH}" \
             -f base="workflows" \
             -F draft=true \
-            -f body="$BODY"
+            -f body="$BODY" \
+            --jq '.number')
+          echo "Opened draft PR #${PR_NUMBER}"
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: Remove non-whitelisted workflows
-        if: steps.divergence.outputs.needs_sync == 'true'
+        if: steps.divergence.outputs.needs_sync == 'true' && steps.merge.outputs.conflict_branch == ''
         id: cleanup
         run: |
           cd .github/workflows
@@ -181,7 +220,7 @@ jobs:
           echo "removed=${REMOVED}" >> "$GITHUB_OUTPUT"
 
       - name: Commit cleanup
-        if: steps.divergence.outputs.needs_sync == 'true' && steps.cleanup.outputs.removed != '0'
+        if: steps.divergence.outputs.needs_sync == 'true' && steps.merge.outputs.conflict_branch == '' && steps.cleanup.outputs.removed != '0'
         run: |
           if git diff --cached --quiet; then
             echo "Nothing to commit for cleanup."
@@ -190,12 +229,12 @@ jobs:
           fi
 
       - name: Push to origin/workflows
-        if: steps.divergence.outputs.needs_sync == 'true' && github.event.inputs.dry_run != 'true'
+        if: steps.divergence.outputs.needs_sync == 'true' && steps.merge.outputs.conflict_branch == '' && github.event.inputs.dry_run != 'true'
         run: |
           git push origin workflows
 
       - name: Chain auto-rebase-iam when release_tag provided
-        if: github.event.inputs.release_tag != '' && github.event.inputs.dry_run != 'true'
+        if: github.event.inputs.release_tag != '' && steps.merge.outputs.conflict_branch == '' && github.event.inputs.dry_run != 'true'
         uses: actions/github-script@v9
         with:
           script: |
@@ -227,3 +266,218 @@ jobs:
           if [ -n "${{ github.event.inputs.release_tag }}" ]; then
             echo "Chained auto-rebase-iam for tag: ${{ github.event.inputs.release_tag }}"
           fi
+          if [ -n "${{ steps.merge.outputs.conflict_branch }}" ]; then
+            echo "Conflicts pushed to ${{ steps.merge.outputs.conflict_branch }} (PR #${{ steps.conflict_pr.outputs.pr_number }}); auto-resolve job takes over."
+          fi
+
+  auto-resolve:
+    name: Auto-resolve sync conflicts with Claude
+    needs: sync
+    if: needs.sync.outputs.conflict_branch != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CONFLICT_BRANCH: ${{ needs.sync.outputs.conflict_branch }}
+      PR_NUMBER: ${{ needs.sync.outputs.pr_number }}
+      CONFLICTED_FILES: ${{ needs.sync.outputs.conflicted_files }}
+
+    steps:
+      - name: Checkout conflict branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync.outputs.conflict_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+          gpg --list-secret-keys --keyid-format=long
+
+      - name: Configure Git
+        run: |
+          git config user.name "Leonardo Rivera"
+          git config user.email "leodrivera@gmail.com"
+          git config user.signingkey "${{ secrets.GPG_SIGNING_KEY }}"
+          git config commit.gpgsign true
+
+      - name: List conflicted files
+        id: files
+        run: |
+          FILES=$(echo "$CONFLICTED_FILES" | awk 'NF {print $2}')
+          echo "Conflicted files:"
+          echo "$FILES"
+          {
+            echo "list<<EOF"
+            echo "$FILES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve conflicts with Claude
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            This branch contains a merge of upstream/master into the fork branch
+            `workflows`, committed WITH unresolved conflict markers
+            (<<<<<<< / ======= / >>>>>>>).
+
+            Conflicted files (git status format):
+            ${{ needs.sync.outputs.conflicted_files }}
+
+            Resolve the conflict markers in those files ONLY. Rules:
+            - The HEAD side carries this fork's patches (AWS system-credentials
+              option on the AWS IAM credential, runtime UI config / fork
+              branding). The upstream/master side carries upstream changes.
+            - Preserve BOTH intents whenever they coexist: keep both imports,
+              keep fork helper calls AND new upstream calls. Only drop one side
+              when the two changes are genuinely mutually exclusive, and prefer
+              the upstream structure with the fork's additions grafted on.
+            - Modify only the files listed above.
+            - Do not run any git commands. Do not commit.
+            - After editing, re-read each file and verify no conflict markers
+              remain and the code is syntactically valid.
+
+      - name: Gate 1 - no conflict markers remain
+        id: gate_markers
+        env:
+          FILES: ${{ steps.files.outputs.list }}
+        run: |
+          FAIL=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            [ -f "$f" ] || continue
+            if grep -nE '^(<{7} |={7}$|>{7} )' "$f"; then
+              echo "::error::Conflict markers remain in $f"
+              FAIL=1
+            fi
+          done <<< "$FILES"
+          exit $FAIL
+
+      - name: Gate 2 - changes restricted to conflicted files
+        id: gate_scope
+        env:
+          FILES: ${{ steps.files.outputs.list }}
+        run: |
+          CHANGED=$(git status --porcelain | awk 'NF {print $NF}')
+          if [ -z "$CHANGED" ]; then
+            echo "::error::Claude produced no changes."
+            exit 1
+          fi
+          FAIL=0
+          while IFS= read -r c; do
+            [ -z "$c" ] && continue
+            if ! grep -qxF "$c" <<< "$FILES"; then
+              echo "::error::Out-of-scope change: $c"
+              FAIL=1
+            fi
+          done <<< "$CHANGED"
+          exit $FAIL
+
+      - name: Commit and push resolution
+        env:
+          FILES: ${{ steps.files.outputs.list }}
+        run: |
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            git add -A -- "$f"
+          done <<< "$FILES"
+          git commit -m "fix(sync): resolve upstream merge conflicts"
+          git push origin "$CONFLICT_BRANCH"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Gate 3 and 4 - build, typecheck and test affected packages
+        id: gate_checks
+        env:
+          FILES: ${{ steps.files.outputs.list }}
+        run: |
+          # Map conflicted files to their workspace packages.
+          PKG_DIRS=$(while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            d=$(dirname "$f")
+            while [ "$d" != "." ] && [ ! -f "$d/package.json" ]; do
+              d=$(dirname "$d")
+            done
+            if [ "$d" != "." ] && [ -f "$d/package.json" ]; then
+              echo "$d"
+            fi
+          done <<< "$FILES" | sort -u)
+
+          if [ -z "$PKG_DIRS" ]; then
+            echo "No workspace packages affected; skipping build/typecheck/test gates."
+            exit 0
+          fi
+          echo "Affected packages:"
+          echo "$PKG_DIRS"
+
+          pnpm install --frozen-lockfile
+
+          while IFS= read -r d; do
+            [ -z "$d" ] && continue
+            NAME=$(node -p "require('./$d/package.json').name")
+            echo "::group::Build dependencies of $NAME"
+            pnpm turbo run build --filter="${NAME}^..."
+            echo "::endgroup::"
+            echo "::group::Typecheck $NAME"
+            pnpm --filter "$NAME" run --if-present typecheck
+            echo "::endgroup::"
+            echo "::group::Test $NAME"
+            pnpm --filter "$NAME" run --if-present test
+            echo "::endgroup::"
+          done <<< "$PKG_DIRS"
+
+      - name: Merge PR
+        if: github.event.inputs.auto_merge != 'false'
+        run: |
+          gh pr ready "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --merge --delete-branch
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Auto-resolved by Claude and merged: all gates passed (no markers, scope restricted to conflicted files, build, typecheck, tests). Audit the resolution in the Files tab. Revert with \`git revert -m 1 <merge-commit>\` if needed."
+
+      - name: Leave resolved PR for review
+        if: github.event.inputs.auto_merge == 'false'
+        run: |
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Claude resolved the conflicts and all validation gates passed. auto_merge=false, so review and merge manually (merge commit, not squash)."
+
+      - name: Chain auto-rebase-iam when release_tag provided
+        if: github.event.inputs.release_tag != '' && github.event.inputs.auto_merge != 'false'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const releaseTag = '${{ github.event.inputs.release_tag }}';
+            const patchBranch = '${{ github.event.inputs.patch_branch }}' || 'iam';
+            console.log(`Dispatching auto-rebase-iam.yml with release_tag=${releaseTag} patch_branch=${patchBranch}`);
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'auto-rebase-iam.yml',
+              ref: 'workflows',
+              inputs: {
+                release_tag: releaseTag,
+                patch_branch: patchBranch,
+              },
+              headers: {
+                'X-GitHub-Api-Version': '2026-03-10',
+              },
+            });
+
+      - name: Comment on PR about failed auto-resolution
+        if: failure()
+        run: |
+          HINT=""
+          if [ "${{ steps.claude.outcome }}" = "failure" ]; then
+            HINT="If the Claude step failed with HTTP 401, the OAuth token likely expired: regenerate with \`claude setup-token\` and update the \`CLAUDE_CODE_OAUTH_TOKEN\` secret."
+          fi
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Auto-resolution failed. Step outcomes: claude=${{ steps.claude.outcome }}, markers=${{ steps.gate_markers.outcome }}, scope=${{ steps.gate_scope.outcome }}, build/typecheck/test=${{ steps.gate_checks.outcome }}. ${HINT} Resolve manually per the PR description ([run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))."
