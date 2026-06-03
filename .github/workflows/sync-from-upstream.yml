@@ -24,6 +24,7 @@ on:
 permissions:
   contents: write
   actions: write
+  pull-requests: write
 
 concurrency:
   group: sync-upstream-workflows
@@ -84,6 +85,8 @@ jobs:
       - name: Merge upstream/master
         if: steps.divergence.outputs.needs_sync == 'true'
         id: merge
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           set +e
           git merge upstream/master --no-edit
@@ -110,13 +113,50 @@ jobs:
           # Any remaining conflicts must be handled by a human.
           REMAINING=$(git status --porcelain | grep -E "^(UU|AA|DU|UD|DD|AU|UA) " || true)
           if [ -n "$REMAINING" ]; then
-            echo "::error::Unresolved conflicts remain outside .github/workflows/. Manual sync required."
+            echo "::error::Unresolved conflicts remain outside .github/workflows/. Manual resolution required."
             echo "$REMAINING"
-            git merge --abort
+
+            if [ "$DRY_RUN" = "true" ]; then
+              git merge --abort
+              exit 1
+            fi
+
+            # Push conflicted merge state to a dedicated branch so a human can
+            # resolve it via a draft PR instead of reconstructing the merge.
+            CONFLICT_BRANCH="sync-conflict-${GITHUB_RUN_ID}"
+            git checkout -b "$CONFLICT_BRANCH"
+            git add -A
+            git commit -m "WIP: merge upstream/master with unresolved conflicts"
+            git push origin "$CONFLICT_BRANCH"
+            {
+              echo "conflict_branch=${CONFLICT_BRANCH}"
+              echo "conflicted_files<<EOF"
+              echo "$REMAINING"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
           git commit --no-edit -m "Merge upstream/master into workflows (auto-resolved workflow conflicts)"
+
+      - name: Open draft PR for manual conflict resolution
+        if: failure() && steps.merge.outputs.conflict_branch != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFLICT_BRANCH: ${{ steps.merge.outputs.conflict_branch }}
+          CONFLICTED_FILES: ${{ steps.merge.outputs.conflicted_files }}
+        run: |
+          # GITHUB_REPOSITORY is always the repo this workflow runs in (the fork).
+          # Head branch has no owner prefix, so it resolves inside this repo only,
+          # and GITHUB_TOKEN has no permissions on any other repo.
+          BODY=$(printf 'Automated sync hit conflicts outside `.github/workflows/` (run %s).\n\nConflicted files:\n```\n%s\n```\n\nThe branch contains the merge state **with conflict markers**. Resolve locally:\n\n```bash\ngit fetch origin %s\ngit checkout %s\n# resolve conflict markers, then:\ngit add -A\ngit commit --amend --no-edit\ngit push --force-with-lease origin %s\n```\n\nThen mark this PR ready for review and merge it into `workflows` (merge commit, not squash).' \
+            "${GITHUB_RUN_ID}" "${CONFLICTED_FILES}" "${CONFLICT_BRANCH}" "${CONFLICT_BRANCH}" "${CONFLICT_BRANCH}")
+          gh api "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f title="Sync conflict: upstream/master into workflows (manual resolution required)" \
+            -f head="${CONFLICT_BRANCH}" \
+            -f base="workflows" \
+            -F draft=true \
+            -f body="$BODY"
 
       - name: Remove non-whitelisted workflows
         if: steps.divergence.outputs.needs_sync == 'true'
