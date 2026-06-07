@@ -323,6 +323,11 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Nightly sync runs as github-actions[bot]; allow only that bot.
           allowed_bots: 'github-actions[bot]'
+          # Edit/Read/Write are NOT in the action's base toolset (only GitHub
+          # tools are). Without these, every file edit is permission-denied and
+          # Claude leaves the conflict markers in place. --max-turns bounds the
+          # run so a misconfiguration can't burn the full job timeout.
+          claude_args: '--allowedTools "Edit,Read,Write,MultiEdit" --max-turns 30'
           prompt: |
             This branch contains a merge of upstream/master into the fork branch
             `workflows`, committed WITH unresolved conflict markers
