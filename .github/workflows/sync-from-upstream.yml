@@ -321,6 +321,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Nightly sync runs as github-actions[bot]; allow only that bot.
+          allowed_bots: 'github-actions[bot]'
           prompt: |
             This branch contains a merge of upstream/master into the fork branch
             `workflows`, committed WITH unresolved conflict markers
@@ -479,7 +481,7 @@ jobs:
         run: |
           HINT=""
           if [ "${{ steps.claude.outcome }}" = "failure" ]; then
-            HINT="If the Claude step failed with HTTP 401, the OAuth token likely expired: regenerate with \`claude setup-token\` and update the \`CLAUDE_CODE_OAUTH_TOKEN\` secret."
+            HINT="Check the Claude step log: HTTP 401 means the OAuth token expired (regenerate with \`claude setup-token\` and update \`CLAUDE_CODE_OAUTH_TOKEN\`); a 'non-human actor' error means the triggering bot is not in \`allowed_bots\`."
           fi
           gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
             "Auto-resolution failed. Step outcomes: claude=${{ steps.claude.outcome }}, markers=${{ steps.gate_markers.outcome }}, scope=${{ steps.gate_scope.outcome }}, build/typecheck/test=${{ steps.gate_checks.outcome }}. ${HINT} Resolve manually per the PR description ([run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))."
