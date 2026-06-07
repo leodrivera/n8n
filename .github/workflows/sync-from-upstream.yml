@@ -329,25 +329,28 @@ jobs:
           # run so a misconfiguration can't burn the full job timeout.
           claude_args: '--allowedTools "Edit,Read,Write,MultiEdit" --max-turns 30'
           prompt: |
-            This branch contains a merge of upstream/master into the fork branch
+            This branch is a merge of upstream/master into the fork branch
             `workflows`, committed WITH unresolved conflict markers
             (<<<<<<< / ======= / >>>>>>>).
 
             Conflicted files (git status format):
             ${{ needs.sync.outputs.conflicted_files }}
 
-            Resolve the conflict markers in those files ONLY. Rules:
-            - The HEAD side carries this fork's patches (AWS system-credentials
-              option on the AWS IAM credential, runtime UI config / fork
-              branding). The upstream/master side carries upstream changes.
-            - Preserve BOTH intents whenever they coexist: keep both imports,
-              keep fork helper calls AND new upstream calls. Only drop one side
-              when the two changes are genuinely mutually exclusive, and prefer
-              the upstream structure with the fork's additions grafted on.
-            - Modify only the files listed above.
+            First, READ `.claude/rules/fork-patches.md`. It is the authoritative
+            inventory of the fork's patches: for each upstream-owned file it
+            documents the fork's intent and the exact resolution rule, plus the
+            golden rule (HEAD = fork patches, upstream/master = upstream changes;
+            preserve BOTH sides — re-apply the fork's addition on top of the
+            upstream change). Follow those per-file rules.
+
+            Then resolve the conflict markers, observing:
+            - Modify ONLY the files listed above.
             - Do not run any git commands. Do not commit.
             - After editing, re-read each file and verify no conflict markers
               remain and the code is syntactically valid.
+            - If a conflicted file is NOT covered by fork-patches.md, the fork
+              has grown new patch surface: resolve it by the golden rule and
+              note it (the drift case described in that file).
 
       - name: Gate 1 - no conflict markers remain
         id: gate_markers
