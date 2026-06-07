@@ -68,8 +68,8 @@ jobs:
 
       - name: Configure Git
         run: |
-          git config user.name "Leonardo Rivera"
-          git config user.email "leodrivera@gmail.com"
+          git config user.name "${{ vars.GIT_USER_NAME }}"
+          git config user.email "${{ vars.GIT_USER_EMAIL }}"
           git config user.signingkey "${{ secrets.GPG_SIGNING_KEY }}"
           git config commit.gpgsign true
 
@@ -308,8 +308,8 @@ jobs:
 
       - name: Configure Git
         run: |
-          git config user.name "Leonardo Rivera"
-          git config user.email "leodrivera@gmail.com"
+          git config user.name "${{ vars.GIT_USER_NAME }}"
+          git config user.email "${{ vars.GIT_USER_EMAIL }}"
           git config user.signingkey "${{ secrets.GPG_SIGNING_KEY }}"
           git config commit.gpgsign true
 
@@ -402,11 +402,20 @@ jobs:
         env:
           FILES: ${{ steps.files.outputs.list }}
         run: |
+          # claude-code-action resets the git user to claude[bot] during its
+          # run, which overrides the job-level Configure Git step and leaves
+          # this commit unsigned (GitHub shows it Unverified). Re-assert the
+          # signing identity here so the resolution commit is GPG-signed and
+          # Verified, attributed to the key's owner.
+          git config user.name "${{ vars.GIT_USER_NAME }}"
+          git config user.email "${{ vars.GIT_USER_EMAIL }}"
+          git config user.signingkey "${{ secrets.GPG_SIGNING_KEY }}"
+          git config commit.gpgsign true
           while IFS= read -r f; do
             [ -z "$f" ] && continue
             git add -A -- "$f"
           done <<< "$FILES"
-          git commit -m "fix(sync): resolve upstream merge conflicts"
+          git commit -S -m "fix(sync): resolve upstream merge conflicts"
           git push origin "$CONFLICT_BRANCH"
 
       - name: Setup pnpm

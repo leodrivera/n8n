@@ -53,8 +53,8 @@ jobs:
 
       - name: Configure Git
         run: |
-          git config user.name "Leonardo Rivera"
-          git config user.email "leodrivera@gmail.com"
+          git config user.name "${{ vars.GIT_USER_NAME }}"
+          git config user.email "${{ vars.GIT_USER_EMAIL }}"
           # Configure GPG signing for the bot
           git config user.signingkey ${{ secrets.GPG_SIGNING_KEY }}
           git config commit.gpgsign true
