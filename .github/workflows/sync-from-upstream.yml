@@ -137,10 +137,20 @@ jobs:
             # Push conflicted merge state to a dedicated branch so the
             # auto-resolve job (or a human) can finish it via a draft PR
             # instead of reconstructing the merge.
+            #
+            # Commit the in-progress merge as a TRUE merge commit (two parents:
+            # workflows + upstream/master) BEFORE branching. `git checkout -b`
+            # first drops MERGE_HEAD, producing a single-parent commit that
+            # (a) shows upstream's entire delta as the PR diff and (b) loses
+            # upstream/master from workflows' ancestry, so every later sync
+            # re-evaluates the full divergence and re-conflicts. Committing
+            # while MERGE_HEAD is still set records both parents.
             CONFLICT_BRANCH="sync-conflict-${GITHUB_RUN_ID}"
-            git checkout -b "$CONFLICT_BRANCH"
             git add -A
             git commit -m "WIP: merge upstream/master with unresolved conflicts"
+            git branch "$CONFLICT_BRANCH"
+            git reset --hard origin/workflows
+            git checkout "$CONFLICT_BRANCH"
 
             # Apply the fork whitelist policy on the conflict branch too, so the
             # eventual merge of this branch is a complete sync.
