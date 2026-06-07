@@ -434,8 +434,13 @@ jobs:
           while IFS= read -r d; do
             [ -z "$d" ] && continue
             NAME=$(node -p "require('./$d/package.json').name")
-            echo "::group::Build dependencies of $NAME"
-            pnpm turbo run build --filter="${NAME}^..."
+            # Build the package itself (turbo's build dependsOn ^build, so its
+            # workspace deps build too). The package's own dist/ must exist:
+            # integration tests load sibling node files from dist at runtime, so
+            # building only deps ("${NAME}^...") leaves dist missing and tests
+            # fail with "Cannot find module .../dist/...".
+            echo "::group::Build $NAME (and its dependencies)"
+            pnpm turbo run build --filter="${NAME}"
             echo "::endgroup::"
             echo "::group::Typecheck $NAME"
             pnpm --filter "$NAME" run --if-present typecheck
