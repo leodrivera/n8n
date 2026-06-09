@@ -2,18 +2,109 @@
 
 # n8n - Secure Workflow Automation for Technical Teams
 
-> **Note:** This is a fork of n8n that implements the feature from [PR #18026](https://github.com/n8n-io/n8n/pull/18026)
->
-> **Feature: AWS System Credentials Support**  
-> This fork adds the ability to use AWS system credentials (IAM roles) instead of static access/secret keys. This enables:
-> - ✅ Using IAM roles in Kubernetes/EKS environments (IRSA, Pod Identity)
-> - ✅ Secure credential management without storing static keys
-> - ✅ Seamless integration with cloud-native AWS deployments
-> - ✅ Quick local development with AWS CLI configured credentials
+> **Note:** This is a fork of `n8n-io/n8n` that tracks upstream `master` and
+> carries one user-facing patch: **AWS system credentials on the AWS (IAM)
+> credential**. The implementation is *inspired by* (not a strict copy of)
+> [PR #18026](https://github.com/n8n-io/n8n/pull/18026) — see
+> [🔧 AWS System Credentials Support](#-aws-system-credentials-support) below.
 
 n8n is a workflow automation platform that gives technical teams the flexibility of code with the speed of no-code. With 400+ integrations, native AI capabilities, and a fair-code license, n8n lets you build powerful automations while maintaining full control over your data and deployments.
 
 ![n8n.io - Screenshot](https://raw.githubusercontent.com/n8n-io/n8n/master/assets/n8n-screenshot-readme.png)
+
+## 🔧 AWS System Credentials Support
+
+This fork lets the **AWS (IAM)** credential resolve to the deployment's **ambient
+AWS identity** (env vars, IRSA, EKS Pod Identity, ECS task role, EC2 instance
+role) instead of static access/secret keys. Turn on **Credential Type → Systems**
+on the credential and set `N8N_AWS_SYSTEM_CREDENTIALS_ACCESS_ENABLED=true` on the
+instance — every AWS node using that credential (S3, SES, Textract, Transcribe,
+Bedrock, …) then authenticates with no static keys stored.
+
+### Lineage & honesty about it
+
+The idea comes from [PR #18026](https://github.com/n8n-io/n8n/pull/18026), but
+this is **not** that PR. Two things changed:
+
+- The original PR gated the feature behind its own `CREDENTIALS_ALLOW_SYSTEM`
+  env var. This fork **drops that variable** and reuses upstream's official
+  `N8N_AWS_SYSTEM_CREDENTIALS_ACCESS_ENABLED` setting, to stay aligned with the
+  way n8n shipped system credentials (see the
+  [AWS STS credentials docs](https://docs.n8n.io/integrations/builtin/credentials/aws/#sts-credentials-choose-one-method)).
+- The resolution chain reuses upstream's `getSystemCredentials()` helper rather
+  than carrying a parallel implementation.
+
+### How this differs from stock n8n
+
+Upstream n8n **does** ship system-credential resolution (including IRSA and EKS
+Pod Identity) on a separate **AWS (Assume Role)** credential
+([PR #20626](https://github.com/n8n-io/n8n/pull/20626), IRSA added in
+[PR #22316](https://github.com/n8n-io/n8n/pull/22316)), and most AWS nodes now
+accept it. Two gaps remain that this fork closes:
+
+1. **The AWS (Assume Role) credential always performs an extra `STS.AssumeRole`
+   hop** into a *target* role — it **requires** a `Role ARN`, `External ID`, and
+   session name. There is no way to use the ambient role (ECS task role / IRSA /
+   instance role) *directly* as the identity without assuming a second role.
+2. **Some nodes still don't expose the Assume Role credential at all** — they
+   declare only the **AWS (IAM)** credential, so on stock n8n they can reach the
+   ambient role *nowhere* and require static keys.
+
+   IAM-only nodes (upstream `master`, verified 2026-06-09):
+
+   | Node | Affected versions |
+   |---|---|
+   | AWS Cognito | all |
+   | AWS IAM | all |
+   | AWS Transcribe | all |
+   | AWS S3 | v1 only (default is v2, which supports Assume Role) |
+
+The fork adds **Credential Type → Systems** to the **AWS (IAM)** credential, so
+the ambient identity resolves *directly* on the credential every AWS node
+already accepts.
+
+| | Stock n8n — AWS (Assume Role) | This fork — AWS (IAM) → Systems |
+|---|---|---|
+| Static keys required | No (with system creds) | No |
+| Mandatory `STS.AssumeRole` hop | **Yes** — needs `Role ARN` + `External ID` | **No** — ambient role *is* the identity |
+| Env / IRSA / Pod Identity / ECS / EC2 | ✅ | ✅ (same `getSystemCredentials()` chain) |
+| Covers Cognito / IAM / Transcribe / S3 v1 | **No** (IAM-credential-only nodes) | ✅ |
+| Gating env var | `N8N_AWS_SYSTEM_CREDENTIALS_ACCESS_ENABLED` | `N8N_AWS_SYSTEM_CREDENTIALS_ACCESS_ENABLED` |
+
+**Benefit:** the ambient role (ECS task role, EKS Pod Identity / IRSA service
+account, EC2 instance role) becomes the effective identity *directly* — no
+static keys, no `Role ARN` to maintain, and no self-assume round-trip just to
+call AWS as yourself — and it works even on the nodes (Cognito, IAM, Transcribe,
+S3 v1) that upstream leaves static-key-only.
+
+> ℹ️ **IRSA vs EKS Pod Identity:** both work in this fork *and* in stock n8n —
+> they share the same resolver chain (`environment → IRSA → Pod Identity → ECS
+> container metadata → EC2 IMDS`). The fork's contribution is exposing that
+> chain on the **AWS (IAM)** credential, not adding IRSA support.
+
+### Configuration
+
+1. **Enable system-credential access on the instance** (off by default):
+
+   ```bash
+   N8N_AWS_SYSTEM_CREDENTIALS_ACCESS_ENABLED=true
+   ```
+
+2. **Give the runtime an AWS identity** — pick whatever your platform provides;
+   the chain auto-detects in this order:
+
+   | Source | What to provide |
+   |---|---|
+   | Environment | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` |
+   | IRSA (EKS) | service account annotated with `eks.amazonaws.com/role-arn` (sets `AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE`) |
+   | EKS Pod Identity | Pod Identity association (sets `AWS_CONTAINER_CREDENTIALS_FULL_URI`) |
+   | ECS / Fargate | task role (sets `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`) |
+   | EC2 | instance profile (IMDSv2-aware) |
+
+3. **In the editor:** create or edit an **AWS (IAM)** credential, set
+   **Credential Type → Systems**, save. The access-key fields disappear; the
+   credential now uses the ambient identity. Existing **IAM Access Key**
+   credentials are untouched (`accessKey` stays the default).
 
 ## Key Capabilities
 
