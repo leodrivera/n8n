@@ -17,7 +17,10 @@ import { URL } from 'url';
 import { parseString } from 'xml2js';
 import { getAwsCredentials } from '../GenericFunctions';
 import type { AwsIamCredentialsType } from '../../../credentials/common/aws/types';
-import { getAwsSecurityHeaders } from '../../../credentials/common/aws/utils';
+import {
+	assertSupportedAwsRegion,
+	getAwsSecurityHeaders,
+} from '../../../credentials/common/aws/utils';
 
 function getEndpointForService(
 	service: string,
