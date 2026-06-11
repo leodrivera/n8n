@@ -36,7 +36,7 @@ jobs:
   auto-rebase:
     name: Create release/<version> branch
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     
     steps:
       - name: Checkout repository (workflows branch)
@@ -103,6 +103,31 @@ jobs:
           # Export release branch for later steps
           echo "release_branch=${{ steps.params.outputs.release_branch }}" >> $GITHUB_ENV
           echo "custom_tag=${{ steps.params.outputs.custom_tag }}" >> $GITHUB_ENV
+
+      # Compile gate: typecheck the freshly-merged release branch BEFORE the tag
+      # is pushed. A bad conflict resolution (e.g. an import dropped by the
+      # automatic merge strategy) fails here, so no broken tag is ever pushed
+      # or handed to the GHCR publish workflow. The release branch is already
+      # checked out in the working tree by release_update.py at this point.
+      - name: Setup pnpm (from packageManager)
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (compile gate)
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: pnpm typecheck
 
       - name: Push release branch and tag
         run: |
