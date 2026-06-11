@@ -17,16 +17,17 @@ on:
       strategy:
         description: 'Conflict resolution strategy'
         required: false
-        default: 'theirs'
+        default: 'manual'
         type: choice
         options:
+          - manual
           - theirs
           - ours
-          - manual
 
 permissions:
   contents: write
   actions: write
+  id-token: write
 
 env:
   UPSTREAM_REPO: "n8n-io/n8n"
@@ -74,7 +75,7 @@ jobs:
         run: |
           RAW_TAG="${{ github.event.inputs.release_tag }}"
           STRATEGY="${{ github.event.inputs.strategy }}"
-          STRATEGY="${STRATEGY:-theirs}"
+          STRATEGY="${STRATEGY:-manual}"
 
           echo "tag=${RAW_TAG}" >> $GITHUB_OUTPUT
           echo "strategy=${STRATEGY}" >> $GITHUB_OUTPUT
@@ -84,25 +85,141 @@ jobs:
           echo "custom_tag=${RAW_TAG}-iam" >> $GITHUB_OUTPUT
 
       - name: Run release update script
+        id: rebase
         run: |
-          # Build the command based on parameters
-          CMD="python3 release_update.py"
-          
-          # Add target tag
-          CMD="$CMD --to-tag ${{ steps.params.outputs.tag }}"
-          
-          # Add strategy
-          CMD="$CMD --strategy ${{ steps.params.outputs.strategy }}"
-          
-          echo "Running: $CMD"
-          echo "Strategy: ${{ steps.params.outputs.strategy }}"
-          
-          # Execute the command
-          eval $CMD
-          
-          # Export release branch for later steps
-          echo "release_branch=${{ steps.params.outputs.release_branch }}" >> $GITHUB_ENV
-          echo "custom_tag=${{ steps.params.outputs.custom_tag }}" >> $GITHUB_ENV
+          set -euo pipefail
+          CONFLICTS_FILE="${RUNNER_TEMP}/iam-conflicts.txt"
+
+          # Build the release branch: check out the upstream tag and cherry-pick
+          # the fork's IAM commits. The tag is created later (after any conflict
+          # resolution) so it never points at a commit carrying markers.
+          python3 release_update.py \
+            --to-tag "${{ steps.params.outputs.tag }}" \
+            --strategy "${{ steps.params.outputs.strategy }}" \
+            --no-tag \
+            --conflicts-out "${CONFLICTS_FILE}"
+
+          # Export release branch / tag name for later steps.
+          echo "release_branch=${{ steps.params.outputs.release_branch }}" >> "$GITHUB_ENV"
+          echo "custom_tag=${{ steps.params.outputs.custom_tag }}" >> "$GITHUB_ENV"
+
+          # Surface conflicted files (committed with markers) to later steps.
+          CONFLICTS=""
+          [ -f "${CONFLICTS_FILE}" ] && CONFLICTS="$(cat "${CONFLICTS_FILE}")"
+          if [ -n "${CONFLICTS}" ]; then
+            echo "has_conflicts=true" >> "$GITHUB_OUTPUT"
+            echo "Conflicted files carrying markers:"
+            echo "${CONFLICTS}"
+          else
+            echo "has_conflicts=false" >> "$GITHUB_OUTPUT"
+            echo "No content conflicts; cherry-picks applied cleanly."
+          fi
+          {
+            echo "conflict_files<<EOF"
+            echo "${CONFLICTS}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # Resolve any cherry-pick conflicts (committed with markers) using Claude,
+      # guided by the fork's patch manifest, instead of a blind merge strategy.
+      # This is the same pattern the sync-from-upstream workflow already uses.
+      - name: Resolve cherry-pick conflicts with Claude
+        if: steps.rebase.outputs.has_conflicts == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # This workflow runs as github-actions[bot] when chained from the
+          # nightly sync; allow only that bot.
+          allowed_bots: 'github-actions[bot]'
+          # Edit/Read/Write are NOT in the action's base toolset; without them
+          # every edit is permission-denied and Claude leaves markers in place.
+          # --max-turns bounds the run so a misconfiguration can't burn the timeout.
+          claude_args: '--allowedTools "Edit,Read,Write,MultiEdit" --max-turns 30'
+          prompt: |
+            This branch is the upstream n8n release tag with the fork's IAM patch
+            commits cherry-picked on top. Some cherry-picks hit conflicts that were
+            committed WITH conflict markers (<<<<<<< / ======= / >>>>>>>).
+
+            IMPORTANT — in a cherry-pick the marker sides are INVERTED versus a
+            normal merge:
+              - The `<<<<<<< HEAD` (ours) side is the UPSTREAM release code.
+              - The `>>>>>>> <sha>` (theirs) side is the FORK's IAM patch.
+
+            Conflicted files (one per line):
+            ${{ steps.rebase.outputs.conflict_files }}
+
+            First, READ `.claude/rules/fork-patches.md`. It is the authoritative
+            inventory of the fork's patches on upstream-owned files, with the exact
+            per-file resolution rule. Golden rule: PRESERVE BOTH SIDES — keep the
+            upstream code AND re-apply the fork's addition on top (e.g. merge import
+            lines so an upstream symbol like `assertSupportedAwsRegion` and a fork
+            helper like `getAwsSecurityHeaders` are BOTH imported). Never drop the
+            fork's credentialType option, the fork credential helpers, or the
+            repo-URL / runtime-config wiring.
+
+            Then resolve the conflict markers, observing:
+            - Modify ONLY the files listed above.
+            - Do not run any git commands. Do not commit.
+            - After editing, re-read each file and verify no conflict markers
+              remain, the code is syntactically valid, and BOTH the upstream symbol
+              and the fork addition are present where the manifest requires.
+            - If a conflicted file is NOT covered by fork-patches.md, the fork has
+              grown new patch surface: resolve it by the golden rule and note it.
+
+      - name: Gate 1 - no conflict markers remain
+        if: steps.rebase.outputs.has_conflicts == 'true'
+        env:
+          FILES: ${{ steps.rebase.outputs.conflict_files }}
+        run: |
+          FAIL=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            [ -f "$f" ] || continue
+            if grep -nE '^(<{7} |={7}$|>{7} )' "$f"; then
+              echo "::error::Conflict markers remain in $f"
+              FAIL=1
+            fi
+          done <<< "$FILES"
+          exit $FAIL
+
+      - name: Gate 2 - changes restricted to conflicted files
+        if: steps.rebase.outputs.has_conflicts == 'true'
+        env:
+          FILES: ${{ steps.rebase.outputs.conflict_files }}
+        run: |
+          CHANGED=$(git status --porcelain | awk 'NF {print $NF}')
+          if [ -z "$CHANGED" ]; then
+            echo "::error::Claude produced no changes."
+            exit 1
+          fi
+          FAIL=0
+          while IFS= read -r c; do
+            [ -z "$c" ] && continue
+            if ! grep -qxF "$c" <<< "$FILES"; then
+              echo "::error::Out-of-scope change: $c"
+              FAIL=1
+            fi
+          done <<< "$CHANGED"
+          exit $FAIL
+
+      - name: Commit conflict resolution
+        if: steps.rebase.outputs.has_conflicts == 'true'
+        env:
+          FILES: ${{ steps.rebase.outputs.conflict_files }}
+        run: |
+          # claude-code-action resets the git user to claude[bot]; re-assert the
+          # signing identity so the resolution commit is GPG-signed and attributed
+          # to the key owner.
+          git config user.name "${{ vars.GIT_USER_NAME }}"
+          git config user.email "${{ vars.GIT_USER_EMAIL }}"
+          git config user.signingkey "${{ secrets.GPG_SIGNING_KEY }}"
+          git config commit.gpgsign true
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            git add -- "$f"
+          done <<< "$FILES"
+          git commit -m "fix(release): resolve IAM cherry-pick conflicts per fork-patches.md"
 
       # Compile gate: typecheck the freshly-merged release branch BEFORE the tag
       # is pushed. A bad conflict resolution (e.g. an import dropped by the
@@ -128,6 +245,16 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: pnpm typecheck
+
+      # Tag only now — after conflict resolution AND the typecheck gate — so the
+      # -iam tag can never point at a commit with markers or a compile error.
+      - name: Create signed release tag
+        run: |
+          git config user.name "${{ vars.GIT_USER_NAME }}"
+          git config user.email "${{ vars.GIT_USER_EMAIL }}"
+          git config user.signingkey "${{ secrets.GPG_SIGNING_KEY }}"
+          git config tag.gpgsign true
+          git tag -s -f "${{ env.custom_tag }}" -m "Release ${{ env.custom_tag }}"
 
       - name: Push release branch and tag
         run: |

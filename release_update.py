@@ -184,29 +184,47 @@ def _list_modify_delete_paths() -> list[str]:
 
 def _has_remaining_conflicts() -> bool:
     """True if any path is still in a conflict state."""
+    return bool(_list_unmerged_paths())
+
+
+def _list_unmerged_paths() -> list[str]:
+    """Return paths still in any conflict (unmerged) state."""
     out = run("git status --porcelain", capture=True, check=False)
+    paths: list[str] = []
     for line in out.splitlines():
-        if len(line) < 2:
+        if len(line) < 4:
             continue
         if line[:2] in ("UU", "AA", "DU", "UD", "DD", "AU", "UA"):
-            return True
-    return False
+            paths.append(line[3:].strip())
+    return paths
 
 
-def cherry_pick_commits(commits: list[str], strategy: str = "theirs"):
+def cherry_pick_commits(commits: list[str], strategy: str = "theirs") -> list[str]:
     """Cherry-pick a list of commits onto the current branch using the given strategy.
 
     Automatically resolves modify/delete conflicts by removing the deleted path
     (the path was already removed in the release tag base; we accept that delete
     and drop the cherry-pick's modification to it).
+
+    For a content conflict we do NOT pick a side: a blind ``-X theirs``/``ours``
+    silently drops the symbols unique to the losing side (e.g. half of an import
+    line), producing code that references undefined names. Instead the file is
+    staged WITH its conflict markers and recorded, so a downstream step can
+    resolve it against ``.claude/rules/fork-patches.md`` (and the typecheck gate
+    backstops the result before any tag is pushed). Use ``--strategy manual`` to
+    surface these conflicts; ``-X`` strategies resolve them silently and defeat
+    this.
+
+    Returns the sorted, de-duplicated list of files committed with markers.
     """
     if not commits:
         print("[cherry-pick] No commits specified, skipping.")
-        return
+        return []
     print(f"[strategy] Conflict resolution: {strategy}")
     use_gpg = is_gpg_signing_available()
     if use_gpg:
         print("[gpg] GPG signing available - cherry-picked commits will be signed if configured")
+    recorded: list[str] = []
     for sha in commits:
         sha = sha.strip()
         if not sha:
@@ -221,19 +239,19 @@ def cherry_pick_commits(commits: list[str], strategy: str = "theirs"):
         if not _cherry_pick_in_progress():
             continue
 
-        # Cherry-pick paused on conflict. Try to auto-resolve modify/delete.
-        md_paths = _list_modify_delete_paths()
-        if not md_paths:
-            print(f"[cherry-pick] {sha} failed with no modify/delete conflicts to auto-resolve.")
-            sys.exit(1)
-
-        for path in md_paths:
+        # Cherry-pick paused on conflict.
+        # 1) Auto-resolve modify/delete by accepting the delete (the path is
+        #    already gone in the upstream base we are building on).
+        for path in _list_modify_delete_paths():
             print(f"[cherry-pick] auto-resolving modify/delete by removing: {path}")
             run(f"git rm -f -- \"{path}\"", capture=False, check=False)
 
-        if _has_remaining_conflicts():
-            print(f"[cherry-pick] {sha} has unresolved conflicts after auto-resolution.")
-            sys.exit(1)
+        # 2) Stage any remaining content conflict WITH its markers and record it
+        #    for downstream resolution. We intentionally do not choose a side.
+        for path in _list_unmerged_paths():
+            print(f"[cherry-pick] staging conflicted file for later resolution: {path}")
+            run(f"git add -- \"{path}\"", capture=False, check=False)
+            recorded.append(path)
 
         cont_flag = "-S" if use_gpg else ""
         cont_cmd = f"git -c core.editor=true cherry-pick {cont_flag} --continue".strip()
@@ -241,7 +259,9 @@ def cherry_pick_commits(commits: list[str], strategy: str = "theirs"):
         if _cherry_pick_in_progress():
             print(f"[cherry-pick] {sha} continue failed.")
             sys.exit(1)
-        print(f"[cherry-pick] {sha} resolved via modify/delete cleanup.")
+        print(f"[cherry-pick] {sha} applied (conflicts carried as markers if any).")
+
+    return sorted(set(recorded))
 
 def remove_workflows_dir_from_release_branch():
     """Remove .github/workflows from the current branch and commit the deletion if present."""
@@ -267,8 +287,16 @@ def main():
     )
     ap.add_argument("--to-tag",
                     help="Target upstream tag (e.g., n8n@1.108.3). If not set, the latest release is used.")
-    ap.add_argument("--strategy", choices=["theirs", "ours", "manual"], default="theirs",
-                    help="Conflict resolution strategy for cherry-pick")
+    ap.add_argument("--strategy", choices=["theirs", "ours", "manual"], default="manual",
+                    help="Conflict resolution strategy for cherry-pick. Default 'manual' "
+                         "surfaces content conflicts as markers for downstream resolution; "
+                         "'-X' strategies resolve them silently and can drop symbols.")
+    ap.add_argument("--conflicts-out", default="",
+                    help="Write the newline-separated list of files committed with conflict "
+                         "markers to this path (consumed by the workflow's conflict-resolution step).")
+    ap.add_argument("--no-tag", action="store_true",
+                    help="Do not create the -iam tag. The workflow creates it AFTER conflict "
+                         "resolution so the tag never points at a commit carrying markers.")
     args = ap.parse_args()
 
     ensure_repo()
@@ -289,14 +317,27 @@ def main():
     try:
         # Remove workflows from the release branch to avoid permissions issues when pushing
         remove_workflows_dir_from_release_branch()
-        cherry_pick_commits(CHERRY_PICK_COMMITS, args.strategy)
+        conflicted = cherry_pick_commits(CHERRY_PICK_COMMITS, args.strategy)
         head = run("git rev-parse --short HEAD").strip()
         print(f"[ok] {branch_name} at {head} on top of {new_tag}")
-        custom_tag = create_or_update_release_tag(new_tag)
-        print(f"[tag] Created/updated: {custom_tag}")
-        print("\nNext steps (in your fork):\n"
-              f"  git push -u origin {branch_name}\n"
-              f"  git push origin {custom_tag}\n")
+
+        if args.conflicts_out:
+            with open(args.conflicts_out, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(conflicted))
+            print(f"[conflicts] Wrote {len(conflicted)} conflicted path(s) to {args.conflicts_out}")
+        if conflicted:
+            print("[conflicts] Files committed with markers (need resolution before tagging):")
+            for path in conflicted:
+                print(f"  - {path}")
+
+        if args.no_tag:
+            print("[tag] Skipping tag creation (--no-tag); the workflow tags after resolution.")
+        else:
+            custom_tag = create_or_update_release_tag(new_tag)
+            print(f"[tag] Created/updated: {custom_tag}")
+            print("\nNext steps (in your fork):\n"
+                  f"  git push -u origin {branch_name}\n"
+                  f"  git push origin {custom_tag}\n")
     except Exception as e:
         print(f"\n[error] Operation failed: {e}")
         print("\nYou may need to resolve conflicts and continue with:\n"
