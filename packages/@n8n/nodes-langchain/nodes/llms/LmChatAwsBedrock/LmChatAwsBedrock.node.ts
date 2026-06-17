@@ -8,12 +8,7 @@ import {
 	getConnectionHintNoticeField,
 } from '@n8n/ai-utilities';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
-<<<<<<< HEAD
 import { awsNodeAuthOptions, awsNodeCredentials } from 'n8n-nodes-base/dist/nodes/Aws/utils';
-=======
-import type { AwsIamCredentialsType } from 'n8n-nodes-base/dist/credentials/common/aws/types';
-import { getAwsCredentialProvider } from 'n8n-nodes-base/dist/credentials/common/aws/utils';
->>>>>>> bd173b9408 (feat(Aws): Add option to use systems credentials for AWS (IAM))
 
 import {
 	NodeConnectionTypes,
@@ -238,11 +233,7 @@ export class LmChatAwsBedrock implements INodeType {
 	};
 
 	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
-<<<<<<< HEAD
 		const { region: credentialRegion, credentials } = await resolveAwsCredentials(this, itemIndex);
-=======
-		const credentials = await this.getCredentials<AwsIamCredentialsType>('aws');
->>>>>>> bd173b9408 (feat(Aws): Add option to use systems credentials for AWS (IAM))
 		const modelName = this.getNodeParameter('model', itemIndex) as string;
 		const options = this.getNodeParameter('options', itemIndex, {}) as {
 			temperature: number;
@@ -262,11 +253,7 @@ export class LmChatAwsBedrock implements INodeType {
 		const proxyAgent = getNodeProxyAgent(bedrockEndpoint);
 		const clientConfig: BedrockRuntimeClientConfig = {
 			region,
-<<<<<<< HEAD
 			credentials,
-=======
-			credentials: getAwsCredentialProvider(credentials),
->>>>>>> bd173b9408 (feat(Aws): Add option to use systems credentials for AWS (IAM))
 		};
 
 		if (proxyAgent) {

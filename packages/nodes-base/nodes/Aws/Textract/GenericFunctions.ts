@@ -16,12 +16,8 @@ import { NodeApiError, sanitizeXmlName } from 'n8n-workflow';
 import { URL } from 'url';
 import { parseString } from 'xml2js';
 import { getAwsCredentials } from '../GenericFunctions';
-<<<<<<< HEAD
-import { assertSupportedAwsRegion } from '../../../credentials/common/aws/utils';
-=======
 import type { AwsIamCredentialsType } from '../../../credentials/common/aws/types';
-import { getAwsSecurityHeaders } from '../../../credentials/common/aws/utils';
->>>>>>> bd173b9408 (feat(Aws): Add option to use systems credentials for AWS (IAM))
+import { assertSupportedAwsRegion, getAwsSecurityHeaders } from '../../../credentials/common/aws/utils';
 
 function getEndpointForService(
 	service: string,
