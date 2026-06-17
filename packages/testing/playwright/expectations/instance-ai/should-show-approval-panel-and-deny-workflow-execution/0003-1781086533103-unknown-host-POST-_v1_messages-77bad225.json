@@ -1,0 +1,195 @@
+{
+  "httpRequest": {
+    "method": "POST",
+    "path": "/v1/messages",
+    "body": {
+      "type": "REGEX",
+      "regex": "[\\s\\S]*You are the n8n Instance Agent — an AI assistant embedded in an n8n instance\\. Yo[\\s\\S]*\"role\"\\s*:\\s*\"user\"[\\s\\S]{0,1500}\"type\"\\s*:\\s*\"tool_result\"[\\s\\S]{0,2000}\\\\\"success\\\\\":true[\\s\\S]*"
+    }
+  },
+  "httpResponse": {
+    "statusCode": 200,
+    "reasonPhrase": "OK",
+    "headers": {
+      "vary": [
+        "Accept-Encoding"
+      ],
+      "traceresponse": [
+<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+<<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-execute-individual-node-from-node-toolbar/0009-1780493472640-unknown-host-POST-_v1_messages-77bad225.json
+        "00-9c8e6460596810bebc5c209e35e76798-905df7ea40e3b66c-01"
+========
+        "00-2ce21d4d7467df182c683ce0d00435ca-b1a7fd7f60e86b08-01"
+>>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+=======
+        "00-aa58253e650d96c6a3a423c5fbf722c8-2a442a61f05cbd43-01"
+>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-approval-panel-and-deny-workflow-execution/0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json
+      ],
+      "strict-transport-security": [
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      "set-cookie": [
+<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+<<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-execute-individual-node-from-node-toolbar/0009-1780493472640-unknown-host-POST-_v1_messages-77bad225.json
+        "_cfuvid=Gf1B4690fha8sVGFIcvfFzRax_fQfvd0wBf8Kf8tIN4-1780493455.8933852-1.0.1.1-z0ob_UJNihMKU9n1vPCfPbBwike__1fAowarnLr_Pg8; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com"
+      ],
+      "request-id": [
+        "req_011CbgQetQVzj8c7PP8L3BeW"
+========
+        "_cfuvid=EB8vUedbGjjYmfG0pDL7B9ic.M83Rsd2_9H6mgfVTY8-1780493338.9478784-1.0.1.1-d8e8jZ5ig_oU3TmKArTuy4RhCor2gq_fDxAmmmxSssA; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com"
+      ],
+      "request-id": [
+        "req_011CbgQWGRaBXrs6y8pT9CxK"
+>>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+=======
+        "_cfuvid=WGYBNAfcloFbVQY6_TAMPp8WtMSyZuYG.37r41UVB4w-1781086512.0988636-1.0.1.1-HyChO2z.Klci.vDLTxdKTNxkOIYa35syucMTVHvIhFc; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com"
+      ],
+      "request-id": [
+        "req_011CbuQPcTSEg57owpCipBCX"
+>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-approval-panel-and-deny-workflow-execution/0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json
+      ],
+      "cf-cache-status": [
+        "DYNAMIC"
+      ],
+      "anthropic-ratelimit-tokens-reset": [
+<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+<<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-execute-individual-node-from-node-toolbar/0009-1780493472640-unknown-host-POST-_v1_messages-77bad225.json
+        "2026-06-03T13:30:56Z"
+========
+        "2026-06-03T13:28:59Z"
+>>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+=======
+        "2026-06-10T10:15:12Z"
+>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-approval-panel-and-deny-workflow-execution/0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json
+      ],
+      "anthropic-ratelimit-tokens-remaining": [
+        "26972000"
+      ],
+      "anthropic-ratelimit-tokens-limit": [
+        "27000000"
+      ],
+      "anthropic-ratelimit-requests-reset": [
+<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+<<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-execute-individual-node-from-node-toolbar/0009-1780493472640-unknown-host-POST-_v1_messages-77bad225.json
+        "2026-06-03T13:30:56Z"
+========
+        "2026-06-03T13:28:59Z"
+>>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+=======
+        "2026-06-10T10:15:12Z"
+>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-approval-panel-and-deny-workflow-execution/0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json
+      ],
+      "anthropic-ratelimit-requests-remaining": [
+        "19998"
+      ],
+      "anthropic-ratelimit-requests-limit": [
+        "20000"
+      ],
+      "anthropic-ratelimit-output-tokens-reset": [
+<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+<<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-execute-individual-node-from-node-toolbar/0009-1780493472640-unknown-host-POST-_v1_messages-77bad225.json
+        "2026-06-03T13:30:56Z"
+========
+        "2026-06-03T13:28:59Z"
+>>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+=======
+        "2026-06-10T10:15:12Z"
+>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-approval-panel-and-deny-workflow-execution/0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json
+      ],
+      "anthropic-ratelimit-output-tokens-remaining": [
+        "4500000"
+      ],
+      "anthropic-ratelimit-output-tokens-limit": [
+        "4500000"
+      ],
+      "anthropic-ratelimit-input-tokens-reset": [
+<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+<<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-execute-individual-node-from-node-toolbar/0009-1780493472640-unknown-host-POST-_v1_messages-77bad225.json
+        "2026-06-03T13:30:56Z"
+========
+        "2026-06-03T13:28:59Z"
+>>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+=======
+        "2026-06-10T10:15:12Z"
+>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-approval-panel-and-deny-workflow-execution/0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json
+      ],
+      "anthropic-ratelimit-input-tokens-remaining": [
+        "22472000"
+      ],
+      "anthropic-ratelimit-input-tokens-limit": [
+        "22500000"
+      ],
+      "X-Robots-Tag": [
+        "none"
+      ],
+      "Server": [
+        "cloudflare"
+      ],
+      "Date": [
+<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+<<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-execute-individual-node-from-node-toolbar/0009-1780493472640-unknown-host-POST-_v1_messages-77bad225.json
+        "Wed, 03 Jun 2026 13:30:57 GMT"
+========
+        "Wed, 03 Jun 2026 13:29:00 GMT"
+>>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+=======
+        "Wed, 10 Jun 2026 10:15:13 GMT"
+>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-approval-panel-and-deny-workflow-execution/0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json
+      ],
+      "Content-Type": [
+        "text/event-stream; charset=utf-8"
+      ],
+      "Content-Security-Policy": [
+        "default-src 'none'; frame-ancestors 'none'"
+      ],
+      "Cache-Control": [
+        "no-cache"
+      ],
+      "CF-RAY": [
+<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+<<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-execute-individual-node-from-node-toolbar/0009-1780493472640-unknown-host-POST-_v1_messages-77bad225.json
+        "a05f0e235cc62ec8-PRG"
+      ]
+    },
+    "cookies": {
+      "_cfuvid": "Gf1B4690fha8sVGFIcvfFzRax_fQfvd0wBf8Kf8tIN4-1780493455.8933852-1.0.1.1-z0ob_UJNihMKU9n1vPCfPbBwike__1fAowarnLr_Pg8"
+    },
+    "body": {
+      "type": "STRING",
+      "string": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4-6\",\"id\":\"msg_01Jm6SzAzWxWASmzSCKG5B8j\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":1,\"cache_creation_input_tokens\":470,\"cache_read_input_tokens\":32927,\"cache_creation\":{\"ephemeral_5m_input_tokens\":470,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":2,\"service_tier\":\"standard\",\"inference_geo\":\"global\"}}           }\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null},\"usage\":{\"input_tokens\":1,\"cache_creation_input_tokens\":470,\"cache_read_input_tokens\":32927,\"output_tokens\":2}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"     }\n\n",
+      "rawBytes": "ZXZlbnQ6IG1lc3NhZ2Vfc3RhcnQKZGF0YTogeyJ0eXBlIjoibWVzc2FnZV9zdGFydCIsIm1lc3NhZ2UiOnsibW9kZWwiOiJjbGF1ZGUtc29ubmV0LTQtNiIsImlkIjoibXNnXzAxSm02U3pBeld4V0FTbXpTQ0tHNUI4aiIsInR5cGUiOiJtZXNzYWdlIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOltdLCJzdG9wX3JlYXNvbiI6bnVsbCwic3RvcF9zZXF1ZW5jZSI6bnVsbCwic3RvcF9kZXRhaWxzIjpudWxsLCJ1c2FnZSI6eyJpbnB1dF90b2tlbnMiOjEsImNhY2hlX2NyZWF0aW9uX2lucHV0X3Rva2VucyI6NDcwLCJjYWNoZV9yZWFkX2lucHV0X3Rva2VucyI6MzI5MjcsImNhY2hlX2NyZWF0aW9uIjp7ImVwaGVtZXJhbF81bV9pbnB1dF90b2tlbnMiOjQ3MCwiZXBoZW1lcmFsXzFoX2lucHV0X3Rva2VucyI6MH0sIm91dHB1dF90b2tlbnMiOjIsInNlcnZpY2VfdGllciI6InN0YW5kYXJkIiwiaW5mZXJlbmNlX2dlbyI6Imdsb2JhbCJ9fSAgICAgICAgICAgfQoKZXZlbnQ6IG1lc3NhZ2VfZGVsdGEKZGF0YTogeyJ0eXBlIjoibWVzc2FnZV9kZWx0YSIsImRlbHRhIjp7InN0b3BfcmVhc29uIjoiZW5kX3R1cm4iLCJzdG9wX3NlcXVlbmNlIjpudWxsLCJzdG9wX2RldGFpbHMiOm51bGx9LCJ1c2FnZSI6eyJpbnB1dF90b2tlbnMiOjEsImNhY2hlX2NyZWF0aW9uX2lucHV0X3Rva2VucyI6NDcwLCJjYWNoZV9yZWFkX2lucHV0X3Rva2VucyI6MzI5MjcsIm91dHB1dF90b2tlbnMiOjJ9fQoKZXZlbnQ6IG1lc3NhZ2Vfc3RvcApkYXRhOiB7InR5cGUiOiJtZXNzYWdlX3N0b3AiICAgICB9Cgo=",
+      "contentType": "text/event-stream; charset=utf-8"
+    }
+  },
+  "id": "0009-1780493472640-unknown-host-POST-_v1_messages-77bad225.json",
+========
+        "a05f0b486bdcf97e-PRG"
+=======
+        "a0979d0c9ddbc100-HEL"
+>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-approval-panel-and-deny-workflow-execution/0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json
+      ]
+    },
+    "cookies": {
+      "_cfuvid": "WGYBNAfcloFbVQY6_TAMPp8WtMSyZuYG.37r41UVB4w-1781086512.0988636-1.0.1.1-HyChO2z.Klci.vDLTxdKTNxkOIYa35syucMTVHvIhFc"
+    },
+    "body": {
+      "type": "STRING",
+      "string": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4-6\",\"id\":\"msg_01T4qTSejn9gkzr2nz1Nfwwi\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":5385,\"cache_creation_input_tokens\":4562,\"cache_read_input_tokens\":15265,\"cache_creation\":{\"ephemeral_5m_input_tokens\":4562,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":2,\"service_tier\":\"standard\",\"inference_geo\":\"global\"}}         }\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null},\"usage\":{\"input_tokens\":5385,\"cache_creation_input_tokens\":4562,\"cache_read_input_tokens\":15265,\"output_tokens\":2}           }\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"               }\n\n",
+      "rawBytes": "ZXZlbnQ6IG1lc3NhZ2Vfc3RhcnQKZGF0YTogeyJ0eXBlIjoibWVzc2FnZV9zdGFydCIsIm1lc3NhZ2UiOnsibW9kZWwiOiJjbGF1ZGUtc29ubmV0LTQtNiIsImlkIjoibXNnXzAxVDRxVFNlam45Z2t6cjJuejFOZnd3aSIsInR5cGUiOiJtZXNzYWdlIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOltdLCJzdG9wX3JlYXNvbiI6bnVsbCwic3RvcF9zZXF1ZW5jZSI6bnVsbCwic3RvcF9kZXRhaWxzIjpudWxsLCJ1c2FnZSI6eyJpbnB1dF90b2tlbnMiOjUzODUsImNhY2hlX2NyZWF0aW9uX2lucHV0X3Rva2VucyI6NDU2MiwiY2FjaGVfcmVhZF9pbnB1dF90b2tlbnMiOjE1MjY1LCJjYWNoZV9jcmVhdGlvbiI6eyJlcGhlbWVyYWxfNW1faW5wdXRfdG9rZW5zIjo0NTYyLCJlcGhlbWVyYWxfMWhfaW5wdXRfdG9rZW5zIjowfSwib3V0cHV0X3Rva2VucyI6Miwic2VydmljZV90aWVyIjoic3RhbmRhcmQiLCJpbmZlcmVuY2VfZ2VvIjoiZ2xvYmFsIn19ICAgICAgICAgfQoKZXZlbnQ6IG1lc3NhZ2VfZGVsdGEKZGF0YTogeyJ0eXBlIjoibWVzc2FnZV9kZWx0YSIsImRlbHRhIjp7InN0b3BfcmVhc29uIjoiZW5kX3R1cm4iLCJzdG9wX3NlcXVlbmNlIjpudWxsLCJzdG9wX2RldGFpbHMiOm51bGx9LCJ1c2FnZSI6eyJpbnB1dF90b2tlbnMiOjUzODUsImNhY2hlX2NyZWF0aW9uX2lucHV0X3Rva2VucyI6NDU2MiwiY2FjaGVfcmVhZF9pbnB1dF90b2tlbnMiOjE1MjY1LCJvdXRwdXRfdG9rZW5zIjoyfSAgICAgICAgICAgfQoKZXZlbnQ6IG1lc3NhZ2Vfc3RvcApkYXRhOiB7InR5cGUiOiJtZXNzYWdlX3N0b3AiICAgICAgICAgICAgICAgfQoK",
+      "contentType": "text/event-stream; charset=utf-8"
+    }
+  },
+<<<<<<< HEAD:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+  "id": "0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json",
+>>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-run-workflow-button-in-preview/0009-1780493351476-unknown-host-POST-_v1_messages-77bad225.json
+=======
+  "id": "0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json",
+>>>>>>> upstream/master:packages/testing/playwright/expectations/instance-ai/should-show-approval-panel-and-deny-workflow-execution/0003-1781086533103-unknown-host-POST-_v1_messages-77bad225.json
+  "priority": 0,
+  "timeToLive": {
+    "unlimited": true
+  },
+  "times": {
+    "unlimited": true
+  }
+}
